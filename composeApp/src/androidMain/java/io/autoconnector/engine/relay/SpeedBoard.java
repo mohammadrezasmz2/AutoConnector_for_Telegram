@@ -323,6 +323,9 @@ public final class SpeedBoard {
 
     public static void clearAll() { STATS.clear(); }
 
+    /** All records (for the diagnostics export). */
+    public static List<Stat> snapshot() { return new ArrayList<>(STATS.values()); }
+
     public static void clearMode(NetworkMode mode) {
         if (mode == null) return;
         STATS.values().removeIf(st -> st.mode.equals(mode.code));

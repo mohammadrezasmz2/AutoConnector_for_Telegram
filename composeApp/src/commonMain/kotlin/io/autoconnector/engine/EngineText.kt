@@ -15,7 +15,8 @@ internal fun classify(line: String): LogLevel {
     val c = line.firstOrNull() ?: ' '
     return when (c) {
         '✓', '●', '≈', '→', '⚡' -> LogLevel.OK
-        '✗', '⨂' -> LogLevel.FAIL
+        '✗' -> LogLevel.FAIL
+        '⨂' -> LogLevel.MUTED   // a session ending is normal, not a failure
         '↪' -> LogLevel.ROUTE
         '·' -> LogLevel.MUTED
         '⟳', '⚠', '⏸', '✂' -> LogLevel.WARN

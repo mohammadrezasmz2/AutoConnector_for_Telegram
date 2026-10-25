@@ -86,6 +86,8 @@ public final class RelayConnection implements Runnable {
     private String sess() { return localPort + "#" + sessionId; }
 
     private volatile Socket upSocket;
+    /** DC id of this session, for the close log line. */
+    private volatile int dcIdForLog;
     private volatile ProxyEntry upstreamProxy;
     /** Set once the LiveConn is registered — both pipe directions update its
      *  counters / latency-pair timestamps through this reference. */
@@ -311,6 +313,7 @@ public final class RelayConnection implements Runnable {
                     }
                 }
             } catch (Exception ignored) {}
+            dcIdForLog = dcId;
             RelayStats.LiveConn liveConn = new RelayStats.LiveConn(
                     localPort, upstreamProxy.host + ":" + upstreamProxy.port,
                     upstreamProxy.id, dcId,
@@ -416,11 +419,16 @@ public final class RelayConnection implements Runnable {
                 if (liveConnRef != null && liveConnRef.meter.peakKbps > 0) {
                     spd = " · ↓ peak " + AutoTuner.fmtKbps(liveConnRef.meter.peakKbps);
                 }
+                String why = liveConnRef == null ? "" :
+                        (liveConnRef.killReason != null ? liveConnRef.killReason
+                                : (liveConnRef.closedBy.get() != null ? liveConnRef.closedBy.get() : "?"));
                 RelayLog.emit("⨂ " + upstreamProxy.host + ":" + upstreamProxy.port
                         + " — session closed after "
-                        + io.autoconnector.engine.core.Durations.human(dur / 1000) + spd
-                        + (liveConnRef != null && liveConnRef.killReason != null
-                            ? " (" + liveConnRef.killReason + ")" : ""));
+                        + io.autoconnector.engine.core.Durations.human(dur / 1000)
+                        + " · ↓" + TrafficMeter.human(liveConnRef != null ? liveConnRef.bytesDown.get() : 0)
+                        + " ↑" + TrafficMeter.human(liveConnRef != null ? liveConnRef.bytesUp.get() : 0)
+                        + " · DC" + dcIdForLog + spd
+                        + " · by: " + why);
                 long upB = (liveConnRef != null) ? liveConnRef.bytesUp.get() : 0;
                 long downB = (liveConnRef != null) ? liveConnRef.bytesDown.get() : 0;
                 NetLog.close(sess(), "durMs=" + dur + " up=" + upB + " down=" + downB);
@@ -1099,8 +1107,17 @@ public final class RelayConnection implements Runnable {
                     recordSpeed(lc, now, upDirection);
                 }
             }
-        } catch (IOException ignored) {
+            // read() returned -1: this side closed cleanly.
+            RelayStats.LiveConn lce = liveConnRefForLatency;
+            if (lce != null) lce.closedBy.compareAndSet(null,
+                    upDirection ? "Telegram closed" : "upstream closed (EOF)");
+        } catch (IOException e) {
             // peer closed or network dropped
+            RelayStats.LiveConn lce = liveConnRefForLatency;
+            if (lce != null) {
+                String m = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                lce.closedBy.compareAndSet(null, (upDirection ? "Telegram side: " : "upstream side: ") + m);
+            }
         } finally {
             flushBytesToProxy(accumForProxy);
             recordSpeed(liveConnRefForLatency, System.currentTimeMillis(), upDirection);

@@ -84,6 +84,8 @@ private const val LOG_CAP_SUBS = 150
 // Catalog: how many candidate rows to fetch per mode, and how many to show.
 private const val CATALOG_POOL = 300
 private const val CATALOG_SHOWN = 80
+// Lines kept for the exported log file (all tabs together).
+private const val EXPORT_LOG_CAP = 40_000
 
 /** Android implementation of [Engine], backed by the existing Java relay engine. */
 class AndroidEngine(context: Context) : Engine {
@@ -981,6 +983,90 @@ class AndroidEngine(context: Context) : Engine {
         openNextTelegramAdd()
     }
 
+    override fun shareLogs() {
+        scope.launch(Dispatchers.IO) {
+            try {
+                val dir = java.io.File(ctx.cacheDir, "logs").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }   // keep only the newest export
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US)
+                    .format(java.util.Date())
+                val f = java.io.File(dir, "autoconnector-log-$stamp.txt")
+                f.writeText(buildDiagnostics())
+                val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .putExtra(Intent.EXTRA_SUBJECT, f.name)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                send.clipData = ClipData.newRawUri(f.name, uri)
+                val chooser = Intent.createChooser(send, "AutoConnector log")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                ctx.startActivity(chooser)
+                appendLog("⤓ log exported: ${f.name} (${f.length() / 1024} KB)")
+            } catch (t: Throwable) {
+                appendLog("⚠ log export failed: ${t.message}")
+            }
+        }
+    }
+
+    /** Header with the full engine state + every log line since start. */
+    private fun buildDiagnostics(): String {
+        val sb = StringBuilder(1 shl 20)
+        val p = Prefs(ctx)
+        val now = System.currentTimeMillis()
+        val mode = NetworkMonitor.currentMode()
+        val nl = "\n"
+        sb.append("=== AutoConnector diagnostics ===").append(nl)
+        sb.append("version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) built ${BuildConfig.BUILD_DATE}").append(nl)
+        sb.append("time: ${java.util.Date(now)}").append(nl)
+        sb.append("device: ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})").append(nl)
+        sb.append("network mode: ${mode.code}").append(nl)
+        sb.append("settings: connector=${p.appEnabled()} scan=${p.scanEnabled()} ports=${p.relayPortA()}/${p.relayPortB()}" +
+            " proxyMode=${p.proxyMode().code} connectMode=${p.relayConnectMode()} race=${p.relayRaceWidth()}" +
+            " breadth=${p.relayBreadth()} timeoutMs=${p.relayConnectTimeoutMs()} expEngine=${p.expEngineMode()}" +
+            " handshake=${p.handshakeMode()} dpiRelay=${p.dpiApplyRelay()} dpiProbes=${p.dpiApplyProbes()}" +
+            " onlyFakeTls=${p.onlyFakeTls()} prewarm=${p.prewarmEnabled()}/${p.prewarmMode()}/${p.prewarmPool()}" +
+            " speedFirst=${p.speedPriority()} stallGuard=${p.stallGuard()} autoTune=${p.autoTune()} tgFirst=${p.tgFirstScan()}" +
+            " checkConc=${p.checkConcurrency()} checkBatch=${p.checkBatch()}").append(nl)
+        sb.append("auto-tune: ${AutoTuner.summary()}").append(nl)
+        sb.append("telegram busy (scan throttled): ${TrafficGovernor.busy()}").append(nl)
+        val m = RelayManager.INSTANCE
+        val act = m?.activeEntry()
+        sb.append("relay running: ${m != null} · active: ${act?.let { "${it.host}:${it.port} since ${(now - (m?.activeSince() ?: now)) / 1000}s" } ?: "none"}" +
+            " · pinned id: ${RelayManager.currentPinnedId()}").append(nl)
+        sb.append("relay totals: conns=${RelayStats.totalConns.get()} live=${RelayStats.active.get()} accepting=${RelayStats.accepting.get()}" +
+            " ↓${TrafficMeter.human(RelayStats.bytesDown.get())} ↑${TrafficMeter.human(RelayStats.bytesUp.get())}").append(nl)
+        try {
+            sb.append("pool: alive=${store.aliveCount()} total=${store.count()} aliveOnMode=${if (mode != NetworkMode.UNKNOWN) store.aliveCountForMode(mode) else -1}").append(nl)
+        } catch (_: Throwable) {}
+        sb.append(nl).append("--- live relay connections ---").append(nl)
+        for (c in RelayStats.liveConnections()) {
+            sb.append("port ${c.localPort} → ${c.upstream} dc=${c.dcId} age=${(now - c.startedAt) / 1000}s" +
+                " ↓${c.bytesDown.get()}B ↑${c.bytesUp.get()}B" +
+                " firstUp=${if (c.firstUpAt.get() > 0) (now - c.firstUpAt.get()) / 1000 else -1}s ago" +
+                " lastDown=${if (c.lastDownAt.get() > 0) (now - c.lastDownAt.get()) / 1000 else -1}s ago" +
+                " pending=${if (c.pendingWriteAt.get() > 0) (now - c.pendingWriteAt.get()) else 0}ms" +
+                " prewarm=${c.fromPrewarm}").append(nl)
+        }
+        sb.append(nl).append("--- measured speeds (KB/s) ---").append(nl)
+        for (st in SpeedBoard.snapshot().sortedByDescending { it.effective(now) }.take(60)) {
+            sb.append("${st.entry?.host}:${st.entry?.port} mode=${st.mode} down=${"%.1f".format(st.kbps)} x${st.samples}" +
+                " up=${"%.1f".format(st.upKbps)} x${st.upSamples} stalls=${st.stalls}" +
+                " last=${if (st.lastAt > 0) (now - st.lastAt) / 1000 else -1}s ago").append(nl)
+        }
+        sb.append(nl).append("--- anti-DPI handshake stats ---").append(nl)
+        try {
+            for (r in handshakeStats()) {
+                sb.append("${r.label}: attempts=${r.attempts} handshakes=${r.handshakes} tgConnected=${r.tgConnected}" +
+                    " >10k=${r.over10k} >100k=${r.over100k} >1m=${r.over1m} traffic=${r.trafficHuman}").append(nl)
+            }
+        } catch (_: Throwable) {}
+        sb.append(nl).append("=== log (oldest first) ===").append(nl)
+        val lines = synchronized(exportLog) { ArrayList(exportLog) }
+        for (l in lines) sb.append(l).append(nl)
+        return sb.toString()
+    }
+
     override fun cancelTelegramAdd() {
         tgAddQueue.clear()
         tgAddTotal = 0
@@ -1537,8 +1623,18 @@ class AndroidEngine(context: Context) : Engine {
     private val scanLog = ArrayDeque<LogLine>()
 
     @Synchronized
+    // Full history for the "export & share log" file — far larger than the
+    // per-tab UI buffers, oldest first.
+    private val exportLog = ArrayDeque<String>()
+    private val exportFmt = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
+
     private fun appendLog(line: String, cat: LogCat = LogCat.OTHER, session: String? = null) {
         val entry = LogLine(line, classify(line), cat, session, ts = System.currentTimeMillis())
+        synchronized(exportLog) {
+            exportLog.addLast(exportFmt.format(java.util.Date(entry.ts)) + " [" + cat.name + "]" +
+                (if (session != null) " [$session]" else "") + " " + line)
+            while (exportLog.size > EXPORT_LOG_CAP) exportLog.removeFirst()
+        }
         val (dq, cap) = when (cat) {
             LogCat.SUBS -> subsLog to LOG_CAP_SUBS
             LogCat.SCAN -> scanLog to LOG_CAP_SCAN

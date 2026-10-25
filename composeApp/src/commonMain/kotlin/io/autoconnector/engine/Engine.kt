@@ -670,5 +670,9 @@ interface Engine {
      *  each next one when the user comes back to this app from Telegram. */
     fun addToTelegram(ids: List<Long>) { ids.firstOrNull()?.let { id -> tgLink(id)?.let { openLink(it) } } }
     fun cancelTelegramAdd() {}
+
+    /** Writes the FULL log (all tabs, since start) plus a diagnostics snapshot to
+     *  a text file and opens the system share sheet (Android). */
+    fun shareLogs() {}
     fun stopHostTest() {}
 }

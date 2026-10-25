@@ -314,6 +314,7 @@ fun App(engine: Engine) {
                         onToggleSession = { k ->
                             if (k in expandedSessions) expandedSessions.remove(k) else expandedSessions.add(k)
                         },
+                        onShareLogs = { engine.shareLogs() },
                     )
                     Tabs.MORE -> item { MoreScreen(onOpen = { morePage = it }, onOpenGuide = { showGuide = true }, hotkeysSupported = engine.hotkeysSupported(), volPatternSupported = engine.volPatternSupported()) }
                 }

@@ -77,6 +77,10 @@ public final class RelayStats {
         public volatile io.autoconnector.engine.model.ProxyEntry upstreamEntry;
         /** Set by the watchdog when it tears the connection down, for the log. */
         public volatile String killReason;
+        /** Which side ended the session first ("Telegram", "upstream EOF",
+         *  "upstream error: …"), for diagnostics. First writer wins. */
+        public final java.util.concurrent.atomic.AtomicReference<String> closedBy =
+                new java.util.concurrent.atomic.AtomicReference<>();
 
         public LiveConn(int localPort, String upstream, long upstreamProxyId,
                         int dcId, boolean upstreamMtproto, int rttMs,

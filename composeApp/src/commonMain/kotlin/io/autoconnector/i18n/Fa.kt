@@ -485,6 +485,7 @@ object Fa : Strings {
     override val upField = "سرعت آپلود در تلگرام"
     override fun catalogCopyTop(n: Int) = "کپی $n تای برتر"
     override fun catalogCopied(n: Int) = "$n لینک پروکسی کپی شد"
+    override val shareLogs = "خروجی و ارسال کامل لاگ"
     override val copyPasteHint = "در تلگرام (مثلاً Saved Messages) پیست کنید و روی هر لینک بزنید تا اضافه شود"
     override val activeInRelayWord = "★ فعال در رله"
     override val setupTgPorts = "تنظیم پورت‌ها در تلگرام"

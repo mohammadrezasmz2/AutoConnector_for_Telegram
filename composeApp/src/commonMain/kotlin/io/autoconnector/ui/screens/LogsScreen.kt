@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +71,22 @@ fun LazyListScope.logsItems(
     onLogTab: (LogTab) -> Unit,
     expanded: Set<String>,
     onToggleSession: (String) -> Unit,
+    onShareLogs: () -> Unit = {},
 ) {
+    item {
+        // One file with everything since start (all tabs + a diagnostics
+        // snapshot) — to send for troubleshooting instead of screenshots.
+        androidx.compose.material3.OutlinedButton(
+            onClick = onShareLogs,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            androidx.compose.material3.Icon(
+                Icons.Filled.Share, null,
+                modifier = Modifier.padding(end = 6.dp),
+            )
+            Text(LocalStrings.current.shareLogs, fontSize = 14.sp)
+        }
+    }
     item { LogSubTabs(logTab, onLogTab) }
 
     when (logTab) {
