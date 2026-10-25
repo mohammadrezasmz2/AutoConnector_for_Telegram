@@ -26,11 +26,11 @@ public final class SpeedMeter {
     private static final long BUCKET_MS = 250L;
     /** Window length in buckets (8 × 250 ms = 2 s). */
     private static final int WIN = 8;
-    /** A 2 s window must carry at least this much to count as a burst sample. */
-    private static final long MIN_WINDOW_BYTES = 32L * 1024;
     /** A bucket with at least this many bytes counts as "transferring". */
     private static final long BUSY_BUCKET_BYTES = 1024L;
-    /** Minimum busy bytes before the busy-bucket estimate is trusted. */
+    /** A sustained window must carry at least this much (≈ 6 KB/s). */
+    private static final long MIN_WINDOW_BYTES = 12L * 1024;
+    /** Minimum busy bytes before the (display-only) estimate is reported. */
     private static final long MIN_BUSY_BYTES = 16L * 1024;
     /** A bucket with this much data marks "a download is in progress". */
     private static final long BURST_MARK_BYTES = 8L * 1024;
@@ -43,19 +43,17 @@ public final class SpeedMeter {
     private double winRateSum = 0;
     private int winCount = 0;
     private long busyBytes = 0;
-    /** Length (in buckets) of the active transfer periods — consecutive busy
-     *  buckets with gaps of at most {@link #GAP_BUCKETS} count as one period, so a
-     *  slow host that delivers in lumps is timed over the whole period. */
-    private long activeBuckets = 0;
-    private long lastBusyBucket = -1;
-    private static final int GAP_BUCKETS = 8;
+    private long busyBuckets = 0;
 
-    /** Wall-clock ms of the last bucket that moved ≥ 16 KB (download activity). */
+    /** Wall-clock ms of the last bucket that moved ≥ 8 KB (download activity). */
     public volatile long lastBurstAt = 0L;
-    /** Best 2 s window rate (KB/s) seen in this connection, -1 = none yet. */
+    /** Best SUSTAINED 2 s rate (KB/s) seen in this connection, -1 = none yet. */
     public volatile double peakKbps = -1;
-    /** Latest usable speed estimate for the live UI (KB/s), -1 = none yet. */
+    /** Latest sustained-window rate (KB/s) for the live UI, -1 = none yet. */
     public volatile double liveKbps = -1;
+    /** Whether the value returned by the last {@link #take} was a confident
+     *  (sustained-transfer) measurement rather than a rough estimate. */
+    public boolean lastConfident = false;
 
     /** Feeds {@code n} downloaded bytes that arrived at {@code now}. */
     public void onBytes(int n, long now) {
@@ -66,31 +64,34 @@ public final class SpeedMeter {
         if (curBytes >= BURST_MARK_BYTES) lastBurstAt = now;
     }
 
+    /**
+     * Speed is only trusted from SUSTAINED transfers: a 2 s window in which data
+     * arrived in every 250 ms slot. That is a file actually streaming, so the rate
+     * reflects what the host can deliver. Normal browsing (a thumbnail here, a
+     * message there) is limited by what Telegram asks for, not by the host — it
+     * used to be averaged over the idle gaps and made good hosts look "slow".
+     */
     private void roll(long nb) {
         if (curBucket >= 0) {
-            // 1. Commit the finished bucket.
             ring[(int) (curBucket % WIN)] = curBytes;
             if (curBytes >= BUSY_BUCKET_BYTES) {
                 busyBytes += curBytes;
-                if (lastBusyBucket >= 0 && curBucket - lastBusyBucket <= GAP_BUCKETS) {
-                    activeBuckets += curBucket - lastBusyBucket;
-                } else {
-                    activeBuckets += 1;
-                }
-                lastBusyBucket = curBucket;
+                busyBuckets++;
             }
-            // 2. Evaluate the 2 s window that ENDS at the finished bucket.
             long sum = 0;
-            for (long v : ring) sum += v;
-            if (sum >= MIN_WINDOW_BYTES) {
+            boolean sustained = true;
+            for (long v : ring) {
+                sum += v;
+                if (v < BUSY_BUCKET_BYTES) sustained = false;
+            }
+            if (sustained && sum >= MIN_WINDOW_BYTES) {
                 double kbps = (sum / 1024.0) / (WIN * BUCKET_MS / 1000.0);
                 winRateSum += kbps;
                 winCount++;
                 if (kbps > peakKbps) peakKbps = kbps;
                 liveKbps = kbps;
             }
-            // 3. Zero the slots of the buckets that were skipped (no data), so
-            //    the next windows treat that silence as 0 bytes.
+            // Zero the slots of skipped (silent) buckets.
             long gap = nb - curBucket;
             for (long k = 1; k < gap && k <= WIN; k++) {
                 ring[(int) ((curBucket + k) % WIN)] = 0;
@@ -102,23 +103,25 @@ public final class SpeedMeter {
 
     /**
      * Returns the speed (KB/s) measured since the previous call and resets the
-     * accumulators, or -1 when not enough real download happened to judge.
-     * Called periodically from the pipe thread and once at session end.
+     * accumulators, or -1 when nothing usable happened. {@link #lastConfident}
+     * tells whether it came from sustained transfers (trusted for ranking and
+     * switching) or is only a rough estimate from short bursts (display only —
+     * it counts just the time data was actually arriving).
      */
     public double take(long now) {
-        // Flush the in-progress bucket if it is already over.
         if (curBucket >= 0 && now / BUCKET_MS != curBucket) roll(now / BUCKET_MS);
         double out = -1;
+        lastConfident = false;
         if (winCount > 0) {
             out = winRateSum / winCount;
-        } else if (busyBytes >= MIN_BUSY_BYTES && activeBuckets > 0) {
-            out = (busyBytes / 1024.0) / (activeBuckets * BUCKET_MS / 1000.0);
+            lastConfident = true;
+        } else if (busyBytes >= MIN_BUSY_BYTES && busyBuckets > 0) {
+            out = (busyBytes / 1024.0) / (busyBuckets * BUCKET_MS / 1000.0);
         }
-        if (out > 0 && liveKbps < 0) liveKbps = out;
         winRateSum = 0;
         winCount = 0;
         busyBytes = 0;
-        activeBuckets = 0;
+        busyBuckets = 0;
         return out;
     }
 

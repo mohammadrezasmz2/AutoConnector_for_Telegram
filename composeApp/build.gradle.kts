@@ -95,6 +95,8 @@ kotlin {
                 implementation("androidx.core:core-ktx:1.13.1")
                 implementation("androidx.work:work-runtime:2.9.1")
                 implementation("androidx.annotation:annotation:1.8.2")
+                // QR codes for sharing a proxy link (pure Java, no Play Services).
+                implementation("com.google.zxing:core:3.5.3")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
             }
         }

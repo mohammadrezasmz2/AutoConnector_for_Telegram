@@ -1062,6 +1062,7 @@ public final class RelayConnection implements Runnable {
         byte[] buf = new byte[PIPE_BUF];
         long accumForProxy = 0;
         long lastFlush = System.currentTimeMillis();
+        long lastSpeedTake = lastFlush;
         try {
             int n;
             while ((n = src.read(buf)) > 0) {
@@ -1118,8 +1119,11 @@ public final class RelayConnection implements Runnable {
                     flushBytesToProxy(accumForProxy);
                     accumForProxy = 0;
                     lastFlush = now;
-                    // Live speed sample for long downloads, so the ranking reacts
-                    // while the session is still running.
+                }
+                // Speed sample every 5 s while data flows, so the catalog and the
+                // ranking react while a download is still running.
+                if (now - lastSpeedTake >= 5000) {
+                    lastSpeedTake = now;
                     recordSpeed(lc, now, upDirection);
                 }
             }
@@ -1150,10 +1154,10 @@ public final class RelayConnection implements Runnable {
             io.autoconnector.engine.core.NetworkMode m = io.autoconnector.engine.core.NetworkMonitor.currentMode();
             if (upDirection) {
                 double kbps = lc.meterUp.take(now);
-                if (kbps > 0) SpeedBoard.recordUp(p, m, kbps);
+                if (kbps > 0) SpeedBoard.recordUp(p, m, kbps, lc.meterUp.lastConfident);
             } else {
                 double kbps = lc.meter.take(now);
-                if (kbps > 0) SpeedBoard.record(p, m, kbps);
+                if (kbps > 0) SpeedBoard.record(p, m, kbps, lc.meter.lastConfident);
             }
         } catch (Throwable ignored) {}
     }

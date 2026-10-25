@@ -145,29 +145,49 @@ public final class SpeedBoard {
         return st == null ? -1 : st.effective(System.currentTimeMillis());
     }
 
-    /** Folds one measured session speed into the host's record. */
+    /** Folds one measured session speed (a sustained-transfer measurement). */
     public static void record(ProxyEntry p, NetworkMode mode, double kbps) {
+        record(p, mode, kbps, true);
+    }
+
+    /**
+     * Folds one speed sample into the host's record. A {@code confident} sample
+     * (data streamed continuously) is averaged in normally and may be used to
+     * switch away from a slow host. A rough estimate from short bursts is only a
+     * lower bound of what the host can do: it can raise the shown speed or fill
+     * an empty record, but never lowers it and never triggers a switch.
+     */
+    public static void record(ProxyEntry p, NetworkMode mode, double kbps, boolean confident) {
         if (p == null || p.id <= 0 || !(kbps > 0)) return;
         long now = System.currentTimeMillis();
         Stat st = stat(p, mode, true);
         synchronized (st) {
-            st.kbps = st.samples == 0 ? kbps : st.kbps * 0.6 + kbps * 0.4;
+            if (confident) {
+                st.kbps = st.samples == 0 ? kbps : st.kbps * 0.6 + kbps * 0.4;
+                st.lastSampleKbps = kbps;
+                st.lastSampleAt = now;
+            } else if (st.samples == 0 || kbps > st.kbps) {
+                st.kbps = st.samples == 0 ? kbps : st.kbps * 0.7 + kbps * 0.3;
+            } else {
+                st.lastAt = now;   // still a sign of life
+                persist(st);
+                return;
+            }
             if (kbps > st.bestKbps) st.bestKbps = kbps;
             st.samples++;
             st.lastAt = now;
-            st.lastSampleKbps = kbps;
-            st.lastSampleAt = now;
         }
         persist(st);
-        AutoTuner.onSpeedSample(kbps);
+        if (confident) AutoTuner.onSpeedSample(kbps);
     }
 
     /** Folds one measured UPLOAD speed (Telegram → upstream) into the record. */
-    public static void recordUp(ProxyEntry p, NetworkMode mode, double kbps) {
+    public static void recordUp(ProxyEntry p, NetworkMode mode, double kbps, boolean confident) {
         if (p == null || p.id <= 0 || !(kbps > 0)) return;
         long now = System.currentTimeMillis();
         Stat st = stat(p, mode, true);
         synchronized (st) {
+            if (!confident && st.upSamples > 0 && kbps <= st.upKbps) { st.upLastAt = now; return; }
             st.upKbps = st.upSamples == 0 ? kbps : st.upKbps * 0.6 + kbps * 0.4;
             st.upSamples++;
             st.upLastAt = now;

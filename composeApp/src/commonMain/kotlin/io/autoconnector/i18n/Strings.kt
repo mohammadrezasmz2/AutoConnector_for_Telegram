@@ -407,6 +407,18 @@ interface Strings {
     val activeInRelayWord: String get() = "★ active in relay"
     val setupTgPorts: String get() = "Set up ports in Telegram"
     fun catalogCopyTop(n: Int): String = "Copy top $n"
+    /** "N of M hosts have a measured <download/upload> speed" under the tabs. */
+    fun catalogMeasured(n: Int, total: Int, what: String): String =
+        "$n of $total hosts have a measured $what speed — they are ranked first; the rest by rating until Telegram traffic passes through them."
+    val measuredDown: String get() = "download"
+    val measuredUp: String get() = "upload"
+    val measuredBoth: String get() = "download/upload"
+    val qrTitle: String get() = "Proxy QR code"
+    val qrShare: String get() = "Share QR"
+    val qrHint: String get() = "Scan with another phone's camera or Telegram to add this proxy."
+    val qrUnavailable: String get() = "QR is not available on this platform."
+    val qrShow: String get() = "QR code"
+    val close: String get() = "Close"
     fun catalogCopied(n: Int): String = "$n proxy links copied"
     val catalogSortHint: String get() = "Speeds are measured from real Telegram traffic. \"Best → relay\" makes the relay (55001/55002) use it and still auto-switch if it fails; ✈ adds a proxy directly to Telegram (no auto-switch)."
     val quickOpenTg: String get() = "Open in Telegram"

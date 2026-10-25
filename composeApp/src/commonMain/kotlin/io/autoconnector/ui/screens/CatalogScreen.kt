@@ -33,6 +33,12 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -107,6 +113,7 @@ fun CatalogContent(
     onCancelTelegramAdd: () -> Unit = {},
     tgAddDone: Int = 0,
     tgAddTotal: Int = 0,
+    onShowQr: (CatalogItem) -> Unit = {},
     // Changes every engine tick so the (cached, engine-side re-ranked) list is
     // re-read and the order updates live.
     refreshKey: Long = 0L,
@@ -236,6 +243,24 @@ fun CatalogContent(
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
+            // How many hosts actually have the number this tab sorts by — the
+            // rest can only be ordered by rating, so the tabs differ only at the top.
+            val measuredN = shown.count {
+                when (sortTab) {
+                    SortTab.DOWN -> it.speedKbps >= 0
+                    SortTab.UP -> it.upKbps >= 0
+                    SortTab.BOTH -> it.speedKbps >= 0 || it.upKbps >= 0
+                }
+            }
+            Text(
+                t.catalogMeasured(
+                    measuredN, shown.size,
+                    when (sortTab) { SortTab.DOWN -> t.measuredDown; SortTab.UP -> t.measuredUp; SortTab.BOTH -> t.measuredBoth },
+                ),
+                color = if (measuredN > 0) AppColors.accent else AppColors.onSurfaceMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+            )
             Text(
                 t.catalogSortHint,
                 color = AppColors.onSurfaceMuted,
@@ -252,9 +277,13 @@ fun CatalogContent(
             )
         } else {
             Spacer(Modifier.height(6.dp))
-            for (p in shown) {
+            shown.forEachIndexed { i, p ->
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 3.dp)) {
-                    CatalogTile(p, onQuickOpen = { onQuickOpen(p) }) { onClick(p) }
+                    CatalogTile(
+                        p, rank = i + 1, tab = sortTab,
+                        onQuickOpen = { onQuickOpen(p) },
+                        onQr = { onShowQr(p) },
+                    ) { onClick(p) }
                 }
             }
             Spacer(Modifier.height(6.dp))
@@ -310,6 +339,9 @@ private fun sortForTab(items: List<CatalogItem>, tab: SortTab): List<CatalogItem
     }
     fun tier(c: CatalogItem): Int = when {
         c.pinned || c.activeInRelay -> 0
+        // Proven by real Telegram traffic in the last 30 min → ranked by speed
+        // even if a background probe just failed.
+        metric(c) >= 0 && c.speedAgeSec in 0L..1800L -> 1
         !c.alive -> 4
         c.coolingDown -> 3
         metric(c) >= 0 -> 1
@@ -331,7 +363,14 @@ private fun speedColor(kbps: Int): Color = when {
 }
 
 @Composable
-private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: () -> Unit) {
+private fun CatalogTile(
+    p: CatalogItem,
+    rank: Int = 0,
+    tab: SortTab = SortTab.DOWN,
+    onQuickOpen: () -> Unit = {},
+    onQr: () -> Unit = {},
+    onClick: () -> Unit,
+) {
     val t = LocalStrings.current
     Column(
         Modifier.fillMaxWidth()
@@ -343,6 +382,15 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
     ) {
         // Row 1: host takes all spare space (truncates last), alive badge, rating bars.
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (rank > 0) {
+                Text(
+                    "#$rank",
+                    color = if (rank <= 5) AppColors.accent else AppColors.onSurfaceMuted,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.width(6.dp))
+            }
             Text(
                 p.host,
                 Modifier.weight(1f),
@@ -385,6 +433,7 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
                 if (p.speedKbps >= 0) p.speedHuman else t.dash,
                 Modifier.weight(1.3f),
                 valueColor = speedColor(p.speedKbps),
+                highlighted = tab != SortTab.UP,
             )
             IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.7f))
             // Real Telegram upload speed through this host.
@@ -393,8 +442,13 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
                 if (p.upKbps >= 0) p.upHuman else t.dash,
                 Modifier.weight(1.3f),
                 valueColor = speedColor(p.upKbps),
+                highlighted = tab != SortTab.DOWN,
             )
             IconStat(ICON_TRAFFIC, p.bytesRelayedHuman, Modifier.weight(1.0f))
+            // QR code of this proxy (show / share).
+            androidx.compose.material3.IconButton(onClick = onQr, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.QrCode2, contentDescription = t.qrShow, tint = AppColors.accent, modifier = Modifier.size(18.dp))
+            }
             // One tap: open this proxy in Telegram's "add proxy" dialog.
             androidx.compose.material3.IconButton(onClick = onQuickOpen, modifier = Modifier.size(28.dp)) {
                 Icon(Icons.Filled.Send, contentDescription = t.quickOpenTg, tint = AppColors.accent, modifier = Modifier.size(18.dp))
@@ -404,8 +458,18 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
 }
 
 @Composable
-private fun IconStat(icon: ImageVector, value: String, modifier: Modifier, valueColor: Color = AppColors.onSurface) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+private fun IconStat(
+    icon: ImageVector, value: String, modifier: Modifier,
+    valueColor: Color = AppColors.onSurface, highlighted: Boolean = false,
+) {
+    // The column the current tab ranks by gets a tinted pill so switching tabs
+    // visibly changes what the list is sorted on.
+    val m = if (highlighted) modifier.padding(end = 3.dp)
+        .clip(RoundedCornerShape(6.dp))
+        .background(AppColors.accent.copy(alpha = 0.14f))
+        .padding(horizontal = 3.dp, vertical = 1.dp)
+    else modifier
+    Row(m, verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = AppColors.onSurfaceMuted, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(3.dp))
         Text(value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -446,6 +510,7 @@ fun CatalogDetailPage(
     onCopy: () -> Unit,
     onOpen: () -> Unit,
     onMakeRelay: () -> Unit,
+    onQr: () -> Unit = {},
     onTest: () -> Unit = {},
     onStopTest: () -> Unit = {},
     testingThis: Boolean = false,
@@ -628,6 +693,9 @@ fun CatalogDetailPage(
                     androidx.compose.material3.IconButton(onClick = onOpen) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = t.actOpen, tint = AppColors.accent, modifier = Modifier.size(24.dp))
                     }
+                    androidx.compose.material3.IconButton(onClick = onQr) {
+                        Icon(Icons.Filled.QrCode2, contentDescription = t.qrShow, tint = AppColors.accent, modifier = Modifier.size(24.dp))
+                    }
                     // Small "Тест" action: kick off an on-demand test and scroll to
                     // the test-result block (just above the history table).
                     Button(
@@ -643,6 +711,77 @@ fun CatalogDetailPage(
         }
         }
     }
+}
+
+/**
+ * QR code of a proxy link: drawn natively (black modules on a white card with a
+ * quiet zone so any scanner reads it in dark mode too) + share / copy actions.
+ */
+@Composable
+fun ProxyQrDialog(
+    host: String,
+    link: String,
+    matrix: List<BooleanArray>?,
+    onShare: () -> Unit,
+    onCopy: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val t = LocalStrings.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(t.qrTitle, fontWeight = FontWeight.Bold) },
+        text = {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (matrix != null && matrix.isNotEmpty()) {
+                    Box(
+                        Modifier.fillMaxWidth().aspectRatio(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White)
+                            .padding(14.dp),
+                    ) {
+                        Canvas(Modifier.fillMaxSize()) {
+                            val n = matrix.size
+                            val cell = size.minDimension / n
+                            for (y in 0 until n) {
+                                val row = matrix[y]
+                                for (x in row.indices) {
+                                    if (row[x]) drawRect(
+                                        Color.Black,
+                                        topLeft = Offset(x * cell, y * cell),
+                                        // +0.5px overlap: no hairline gaps between modules.
+                                        size = Size(cell + 0.5f, cell + 0.5f),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(t.qrUnavailable, color = AppColors.onSurfaceMuted, fontSize = 13.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(host, fontFamily = monospaceFontFamily(), fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(t.qrHint, color = AppColors.onSurfaceMuted, fontSize = 12.sp)
+                Spacer(Modifier.height(4.dp))
+                SelectionContainer {
+                    Text(link, color = AppColors.onSurfaceMuted, fontSize = 10.sp, fontFamily = monospaceFontFamily(), maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onShare) {
+                Icon(Icons.Filled.Share, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(t.qrShare)
+            }
+        },
+        dismissButton = {
+            Row {
+                androidx.compose.material3.TextButton(onClick = onCopy) { Text(t.actCopy) }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text(t.close) }
+            }
+        },
+    )
 }
 
 /** A compact icon+label action button for the one-line action row. */

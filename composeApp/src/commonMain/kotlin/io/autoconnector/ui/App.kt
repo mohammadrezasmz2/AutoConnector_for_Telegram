@@ -63,6 +63,7 @@ import io.autoconnector.i18n.LocalStrings
 import io.autoconnector.i18n.stringsFor
 import io.autoconnector.ui.components.keyPageScroll
 import io.autoconnector.ui.screens.CatalogDetailPage
+import io.autoconnector.ui.screens.ProxyQrDialog
 import io.autoconnector.ui.screens.CatalogModeManagePage
 import io.autoconnector.ui.screens.ConnectGuidePage
 import io.autoconnector.ui.screens.ConnectorContent
@@ -105,6 +106,7 @@ fun App(engine: Engine) {
         val expandedSessions = remember { androidx.compose.runtime.mutableStateListOf<String>() }
         var showGuide by remember { mutableStateOf(false) }
         var detail by remember { mutableStateOf<CatalogItem?>(null) }
+        var qrFor by remember { mutableStateOf<CatalogItem?>(null) }
         var manageMode by remember { mutableStateOf<String?>(null) }
         var morePage by remember { mutableStateOf<MoreDest?>(null) }
         var quickSettings by remember { mutableStateOf(false) }
@@ -190,6 +192,22 @@ fun App(engine: Engine) {
             onOpenUrl = engine::openLink,
         )
 
+        // QR of one proxy (from a catalog tile or the detail page).
+        qrFor?.let { q ->
+            val link = remember(q.id) {
+                engine.tgLink(q.id)?.replaceFirst("tg://", "https://t.me/") ?: ""
+            }
+            val matrix = remember(link) { if (link.isNotEmpty()) engine.qrMatrix(link) else null }
+            ProxyQrDialog(
+                host = q.host,
+                link = link,
+                matrix = matrix,
+                onShare = { engine.shareQr(q.id) },
+                onCopy = { if (link.isNotEmpty()) engine.copyToClipboard(link) },
+                onDismiss = { qrFor = null },
+            )
+        }
+
         val detailItem = detail
         if (detailItem != null) {
             PlatformBackHandler(true) { detail = null }
@@ -202,6 +220,7 @@ fun App(engine: Engine) {
                 onCopy = { engine.tgLink(detailItem.id)?.let(engine::copyToClipboard) },
                 onOpen = { engine.tgLink(detailItem.id)?.let(engine::openLink) },
                 onMakeRelay = { engine.useInRelay(detailItem.id); detail = null },
+                onQr = { qrFor = detailItem },
                 onTest = { engine.testHostNow(detailItem.id) },
                 onStopTest = { engine.stopHostTest() },
                 testingThis = state.testHostId == detailItem.id,
@@ -303,6 +322,7 @@ fun App(engine: Engine) {
                                 val links = list.mapNotNull { engine.tgLink(it.id) }
                                 if (links.isNotEmpty()) engine.copyToClipboard(links.joinToString("\n"))
                             },
+                            onShowQr = { qrFor = it },
                             refreshKey = state.nowSec,
                         )
                     }

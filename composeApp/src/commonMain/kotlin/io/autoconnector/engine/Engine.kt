@@ -91,6 +91,11 @@ data class CatalogItem(
     // Real Telegram UPLOAD speed through this host (KB/s, -1 = not measured yet).
     val upKbps: Int = -1,
     val upHuman: String = "",
+    // Seconds since this host's speed was last measured (-1 = never). A host
+    // that carried Telegram recently stays ranked even if one probe failed.
+    val speedAgeSec: Long = -1,
+    // True while this host is carrying Telegram traffic right now (speed shown live).
+    val liveSpeed: Boolean = false,
 )
 
 data class SourceItem(
@@ -674,5 +679,12 @@ interface Engine {
     /** Writes the FULL log (all tabs, since start) plus a diagnostics snapshot to
      *  a text file and opens the system share sheet (Android). */
     fun shareLogs() {}
+
+    /** QR code of [text] as rows of dark/light modules (null = not supported here). */
+    fun qrMatrix(text: String): List<BooleanArray>? = null
+
+    /** Shares this proxy's QR code as an image (plus the link as text) through the
+     *  system share sheet (Android). */
+    fun shareQr(id: Long) {}
     fun stopHostTest() {}
 }

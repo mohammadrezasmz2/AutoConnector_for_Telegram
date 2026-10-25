@@ -1624,6 +1624,51 @@ public class ProxyStore extends SQLiteOpenHelper {
         return out;
     }
 
+    /** Catalog rows for specific hosts (e.g. every host with a measured speed),
+     *  whether or not they have a per-mode stats row yet. */
+    public List<CatalogRow> catalogRowsByIds(NetworkMode mode, java.util.Collection<Long> ids) {
+        List<CatalogRow> out = new ArrayList<>();
+        if (ids == null || ids.isEmpty()) return out;
+        StringBuilder in = new StringBuilder();
+        for (Long id : ids) {
+            if (id == null) continue;
+            if (in.length() > 0) in.append(',');
+            in.append(id.longValue());
+        }
+        if (in.length() == 0) return out;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT p.*, COALESCE(m.alive,0) AS m_alive, COALESCE(m.last_check,0) AS m_last_check,"
+                        + " COALESCE(m.score,0) AS m_score, COALESCE(m.successes,0) AS m_succ,"
+                        + " COALESCE(m.failures,0) AS m_fail, COALESCE(m.rtt_ms,-1) AS m_rtt,"
+                        + " COALESCE(m.bytes_relayed,0) AS m_bytes, COALESCE(m.total_session_ms,0) AS m_sess,"
+                        + " (SELECT sp.source_id FROM " + SP + " sp JOIN " + S + " s ON s.id=sp.source_id"
+                        + "   WHERE sp.proxy_id=p.id ORDER BY s.order_index ASC, s.id ASC LIMIT 1) AS src_id"
+                        + " FROM " + T + " p LEFT JOIN " + PMS + " m ON m.proxy_id=p.id AND m.mode=?"
+                        + " WHERE p.id IN (" + in + ")",
+                new String[]{mode.code});
+        try {
+            while (c.moveToNext()) {
+                CatalogRow r = new CatalogRow();
+                r.proxy = read(c);
+                r.modeAlive = c.getInt(c.getColumnIndexOrThrow("m_alive")) != 0;
+                r.modeLastCheck = c.getLong(c.getColumnIndexOrThrow("m_last_check"));
+                r.modeScore = c.getDouble(c.getColumnIndexOrThrow("m_score"));
+                r.modeSuccesses = c.getInt(c.getColumnIndexOrThrow("m_succ"));
+                r.modeFailures = c.getInt(c.getColumnIndexOrThrow("m_fail"));
+                r.modeRtt = c.getInt(c.getColumnIndexOrThrow("m_rtt"));
+                r.modeBytes = c.getLong(c.getColumnIndexOrThrow("m_bytes"));
+                r.modeSessionMs = c.getLong(c.getColumnIndexOrThrow("m_sess"));
+                r.coolUntil = c.getLong(c.getColumnIndexOrThrow("cool_until"));
+                int si = c.getColumnIndexOrThrow("src_id");
+                r.sourceId = c.isNull(si) ? 0 : c.getLong(si);
+                out.add(r);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
     /** Global (mode-agnostic) catalog rows — used when the network mode is unknown. */
     public List<CatalogRow> catalogRowsGlobal(int limit) {
         List<CatalogRow> out = new ArrayList<>();

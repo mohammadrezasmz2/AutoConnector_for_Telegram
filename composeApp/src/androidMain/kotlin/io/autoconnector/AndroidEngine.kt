@@ -658,6 +658,33 @@ class AndroidEngine(context: Context) : Engine {
         } catch (_: Throwable) { emptyList() }
     }
 
+    // Live per-host relay throughput (KB/s down, up), from the byte counters of
+    // the connections carrying Telegram right now.
+    private val livePrev = HashMap<Long, LongArray>()   // id → [down, up, timeMs]
+
+    @Synchronized
+    private fun liveRates(now: Long): Map<Long, Pair<Int, Int>> {
+        val sums = HashMap<Long, LongArray>()
+        for (c in RelayStats.liveConnections()) {
+            if (c.upstreamProxyId <= 0) continue
+            val a = sums.getOrPut(c.upstreamProxyId) { LongArray(2) }
+            a[0] += c.bytesDown.get(); a[1] += c.bytesUp.get()
+        }
+        val out = HashMap<Long, Pair<Int, Int>>()
+        for ((id, a) in sums) {
+            val prev = livePrev[id]
+            if (prev != null && now - prev[2] in 500..10_000) {
+                val secs = (now - prev[2]) / 1000.0
+                val d = ((a[0] - prev[0]).coerceAtLeast(0) / 1024.0 / secs).toInt()
+                val u = ((a[1] - prev[1]).coerceAtLeast(0) / 1024.0 / secs).toInt()
+                out[id] = d to u
+            }
+            livePrev[id] = longArrayOf(a[0], a[1], now)
+        }
+        livePrev.keys.retainAll(sums.keys)
+        return out
+    }
+
     /** Rebuilds the catalogs the UI asked for in the last 20 s (poll-loop thread). */
     private fun refreshWantedCatalogs() {
         val now = System.currentTimeMillis()
@@ -681,11 +708,30 @@ class AndroidEngine(context: Context) : Engine {
         // Speeds are recorded under the network mode they were measured on; the
         // global (auto) view shows the speeds of the network we're on right now.
         val speedMode = if (mode == NetworkMode.UNKNOWN) NetworkMonitor.currentMode() else mode
-        val rows = if (mode == NetworkMode.UNKNOWN) store.catalogRowsGlobal(CATALOG_POOL)
-                   else store.catalogRowsForMode(mode, CATALOG_POOL)
+        val rows = ArrayList(if (mode == NetworkMode.UNKNOWN) store.catalogRowsGlobal(CATALOG_POOL)
+                   else store.catalogRowsForMode(mode, CATALOG_POOL))
+        // Every host with a measured speed on this network is always listed —
+        // before, a single failed probe could push it out of the top rows and it
+        // "vanished" from the catalog.
+        val have = HashSet<Long>(rows.size * 2)
+        for (r in rows) have.add(r.proxy.id)
+        val measured = SpeedBoard.snapshot()
+            .filter { it.mode == speedMode.code && it.proxyId !in have && (it.samples > 0 || it.upSamples > 0) }
+            .map { it.proxyId }
+        if (measured.isNotEmpty()) {
+            try { rows.addAll(store.catalogRowsByIds(if (mode == NetworkMode.UNKNOWN) speedMode else mode, measured)) } catch (_: Throwable) {}
+        }
+        val live = liveRates(now)
         val items = rows.map { r ->
             catalogItemOf(r, speedMode, now, nums, liveIds, sticky, pinnedId).let {
-                if (it.id == activeId) it.copy(activeInRelay = true) else it
+                var item = if (it.id == activeId) it.copy(activeInRelay = true) else it
+                // Carrying Telegram right now and not measured yet → show the live rate.
+                val lr = live[item.id]
+                if (lr != null) {
+                    if (item.speedKbps < 0 && lr.first > 0) item = item.copy(speedKbps = lr.first, speedHuman = AutoTuner.fmtKbps(lr.first.toDouble()), liveSpeed = true)
+                    if (item.upKbps < 0 && lr.second > 0) item = item.copy(upKbps = lr.second, upHuman = AutoTuner.fmtKbps(lr.second.toDouble()), liveSpeed = true)
+                }
+                item
             }
         }
         return rankCatalog(items).take(CATALOG_SHOWN)
@@ -696,6 +742,9 @@ class AndroidEngine(context: Context) : Engine {
     private fun rankCatalog(items: List<CatalogItem>): List<CatalogItem> {
         fun tier(c: CatalogItem): Int = when {
             c.pinned || c.activeInRelay -> -1
+            // Measured within the last 30 min = proven by real Telegram traffic,
+            // stronger evidence than one failed background probe.
+            c.speedKbps >= 0 && c.speedAgeSec in 0L..1800L -> if (c.speedKbps >= SpeedBoard.SLOW_KBPS.toInt()) 0 else 2
             !c.alive -> 4
             c.coolingDown -> 3
             c.speedKbps >= SpeedBoard.SLOW_KBPS.toInt() -> 0
@@ -753,6 +802,10 @@ class AndroidEngine(context: Context) : Engine {
             coolingDown = r.coolUntil > now,
             upKbps = if (effUp >= 0) effUp.toInt() else -1,
             upHuman = if (effUp >= 0) AutoTuner.fmtKbps(effUp) else "",
+            speedAgeSec = st?.let { s ->
+                val last = maxOf(s.lastAt, s.upLastAt)
+                if (last > 0) (now - last) / 1000 else -1L
+            } ?: -1L,
         )
     }
 
@@ -1005,6 +1058,55 @@ class AndroidEngine(context: Context) : Engine {
                 appendLog("⤓ log exported: ${f.name} (${f.length() / 1024} KB)")
             } catch (t: Throwable) {
                 appendLog("⚠ log export failed: ${t.message}")
+            }
+        }
+    }
+
+    override fun qrMatrix(text: String): List<BooleanArray>? = try {
+        val hints = mapOf(
+            com.google.zxing.EncodeHintType.ERROR_CORRECTION to com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+            com.google.zxing.EncodeHintType.MARGIN to 0,
+        )
+        val m = com.google.zxing.qrcode.QRCodeWriter()
+            .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0, hints)
+        List(m.height) { y -> BooleanArray(m.width) { x -> m.get(x, y) } }
+    } catch (t: Throwable) {
+        appendLog("⚠ QR failed: ${t.message}")
+        null
+    }
+
+    override fun shareQr(id: Long) {
+        val link = tgLink(id) ?: return
+        val qrLink = link.replaceFirst("tg://", "https://t.me/")
+        scope.launch(Dispatchers.IO) {
+            try {
+                val rows = qrMatrix(qrLink) ?: return@launch
+                val n = rows.size
+                val scale = (900 / (n + 8)).coerceAtLeast(4)
+                val size = (n + 8) * scale
+                val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                val px = IntArray(scale * scale) { android.graphics.Color.BLACK }
+                for (y in 0 until n) for (x in 0 until n) {
+                    if (rows[y][x]) bmp.setPixels(px, 0, scale, (x + 4) * scale, (y + 4) * scale, scale, scale)
+                }
+                val dir = java.io.File(ctx.cacheDir, "qr").apply { mkdirs() }
+                dir.listFiles()?.forEach { it.delete() }
+                val f = java.io.File(dir, "proxy-qr-$id.png")
+                f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bmp.recycle()
+                val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".fileprovider", f)
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("image/png")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .putExtra(Intent.EXTRA_TEXT, qrLink)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                send.clipData = ClipData.newRawUri(f.name, uri)
+                val chooser = Intent.createChooser(send, "Proxy QR")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                ctx.startActivity(chooser)
+            } catch (t: Throwable) {
+                appendLog("⚠ QR share failed: ${t.message}")
             }
         }
     }
