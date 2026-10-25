@@ -601,6 +601,76 @@ public final class RelayConnection implements Runnable {
                                                       int breadth,
                                                       int connectTimeoutMs,
                                                       boolean speedFirst) {
+        if (!speedFirst || manager.pinnedEntry() != null) {
+            return acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp, connMode,
+                    raceWidth, breadth, connectTimeoutMs, speedFirst);
+        }
+        // Session affinity: every Telegram socket goes to the ACTIVE host (one
+        // proven proxy, like entering it directly in Telegram). Only when there is
+        // none — or it just failed — is a new one elected, by ONE socket at a time.
+        UpstreamConnector.Channel a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
+        if (a != null) return a;
+        java.util.concurrent.locks.ReentrantLock lock = manager.electLock();
+        if (!lock.tryLock()) {
+            // Another socket is electing right now — wait for its result instead
+            // of launching a second storm of handshakes.
+            try {
+                if (lock.tryLock(connectTimeoutMs + 5000L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    lock.unlock();
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
+            if (a != null) return a;
+            UpstreamConnector.Channel c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
+                    connMode, raceWidth, breadth, connectTimeoutMs, true);
+            if (c != null && manager.activeEntry() == null) manager.setActive(c.proxy, electedWhy(c.proxy));
+            return c;
+        }
+        try {
+            a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
+            if (a != null) return a;
+            UpstreamConnector.Channel c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
+                    connMode, raceWidth, breadth, connectTimeoutMs, true);
+            if (c != null) manager.setActive(c.proxy, electedWhy(c.proxy));
+            return c;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /** Connects to the active host, or returns null if there is none / it failed
+     *  (a failure drops it as active via markUpstreamBad). */
+    private UpstreamConnector.Channel tryActive(int tag, int dcId, Socks5Server.Target dst,
+                                                HandshakeMode mode, WireShaper.Mode exp,
+                                                boolean onlyFakeTls, int connectTimeoutMs) {
+        ProxyEntry act = manager.activeEntry();
+        if (act == null) return null;
+        if (onlyFakeTls && !act.isFakeTls()) { manager.clearActive(act.id, "not FakeTLS"); return null; }
+        try {
+            if (store.isCooled(act.id)) { manager.clearActive(act.id, "on cooldown"); return null; }
+        } catch (Exception ignored) {}
+        return trySerial(java.util.Collections.singletonList(act), tag, dcId, dst, mode, exp,
+                Math.max(connectTimeoutMs, 3000));
+    }
+
+    private static String electedWhy(ProxyEntry p) {
+        double k = SpeedBoard.effectiveKbps(p.id, io.autoconnector.engine.core.NetworkMonitor.currentMode());
+        return k > 0 ? "measured " + AutoTuner.fmtKbps(k) : "first to answer, speed being measured";
+    }
+
+    /** Candidate pool + speed ordering + connect strategy (the election). */
+    private UpstreamConnector.Channel acquireByRace(int tag, int dcId,
+                                                    Socks5Server.Target dst,
+                                                    HandshakeMode mode,
+                                                    boolean onlyFakeTls,
+                                                    WireShaper.Mode exp,
+                                                    RelayConnectMode connMode,
+                                                    int raceWidth,
+                                                    int breadth,
+                                                    int connectTimeoutMs,
+                                                    boolean speedFirst) {
         int multi = onlyFakeTls ? 4 : 1;
         io.autoconnector.engine.core.NetworkMode net =
                 io.autoconnector.engine.core.NetworkMonitor.currentMode();

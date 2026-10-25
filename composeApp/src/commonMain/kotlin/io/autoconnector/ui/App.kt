@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -200,7 +201,7 @@ fun App(engine: Engine) {
                 history = history,
                 onCopy = { engine.tgLink(detailItem.id)?.let(engine::copyToClipboard) },
                 onOpen = { engine.tgLink(detailItem.id)?.let(engine::openLink) },
-                onMakeRelay = { engine.pin(detailItem.id, true); detail = null },
+                onMakeRelay = { engine.useInRelay(detailItem.id); detail = null },
                 onTest = { engine.testHostNow(detailItem.id) },
                 onStopTest = { engine.stopHostTest() },
                 testingThis = state.testHostId == detailItem.id,
@@ -261,7 +262,11 @@ fun App(engine: Engine) {
             // One global scroll for the whole window; the tab bar sticks to the
             // top once the header scrolls past it.
             LazyColumn(Modifier.fillMaxSize().keyPageScroll(listState), state = listState) {
-                item { TitleRow(settings.langCode) { code -> engine.updateSettings(settings.copy(langCode = code)) } }
+                item {
+                    TitleRow(settings.langCode, onOpenGuide = { showGuide = true }) { code ->
+                        engine.updateSettings(settings.copy(langCode = code))
+                    }
+                }
                 if (state.setupNeeded && state.proxyEnabled) item { SetupLine(state) { showGuide = true } }
                 if (!state.notificationsOk) item {
                     NotifLine(onInfo = { notifInfo = true }, onFix = { engine.requestNotifications() })
@@ -289,6 +294,7 @@ fun App(engine: Engine) {
                             onManageMode = { manageMode = it },
                             onClick = { detail = it },
                             onQuickOpen = { item -> engine.tgLink(item.id)?.let(engine::openLink) },
+                            onUseInRelay = { item -> engine.useInRelay(item.id) },
                             onCopyTop = { list ->
                                 val links = list.mapNotNull { engine.tgLink(it.id) }
                                 if (links.isNotEmpty()) engine.copyToClipboard(links.joinToString("\n"))
@@ -318,7 +324,7 @@ fun App(engine: Engine) {
 /** Row 1 — the app title + a language switcher (globe) on the right, so the UI
  *  language can be changed without opening Settings. */
 @Composable
-private fun TitleRow(langCode: String, onPickLang: (String) -> Unit) {
+private fun TitleRow(langCode: String, onOpenGuide: () -> Unit = {}, onPickLang: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -328,8 +334,20 @@ private fun TitleRow(langCode: String, onPickLang: (String) -> Unit) {
             fontWeight = FontWeight.Bold,
             fontSize = 19.sp,
             color = AppColors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
         Spacer(Modifier.weight(1f))
+        // One tap to the "set up ports 55001/55002 in Telegram" page.
+        IconButton(onClick = onOpenGuide, modifier = Modifier.size(33.dp)) {
+            Icon(
+                Icons.Filled.Send,
+                contentDescription = LocalStrings.current.setupTgPorts,
+                tint = AppColors.accent,
+                modifier = Modifier.size(22.dp),
+            )
+        }
         var expanded by remember { mutableStateOf(false) }
         // Flags + English + native, from the shared registry — same list as Settings.
         val langs = listOf("auto" to (LocalStrings.current.langAuto + "  🌐")) +

@@ -86,6 +86,8 @@ data class CatalogItem(
     val speedSamples: Int = 0,
     val stalls: Int = 0,
     val coolingDown: Boolean = false,
+    // The relay's current ACTIVE host: every Telegram socket goes through it.
+    val activeInRelay: Boolean = false,
 )
 
 data class SourceItem(
@@ -653,5 +655,9 @@ interface Engine {
     /** Catalog "test this host now": run a few real probes against the host, log
      *  each into its attempt history, and surface live progress via EngineState. */
     fun testHostNow(id: Long) {}
+
+    /** Make this host the relay's active upstream right now (auto-switches away
+     *  again if it fails or turns out slow — unlike a pin). */
+    fun useInRelay(id: Long) {}
     fun stopHostTest() {}
 }

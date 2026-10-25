@@ -142,10 +142,14 @@ public final class PrewarmPool {
         if (!p.prewarmEnabled()) return null;
         final boolean deferred = p.prewarmMode() == 0;
         final String cfg = cfgSig(p);
+        // Session affinity: only hand out warm sockets to the ACTIVE host, never
+        // to some random other proxy.
+        final ProxyEntry act = activeHost();
         synchronized (lock) {
             for (Iterator<Entry> it = pool.iterator(); it.hasNext(); ) {
                 Entry e = it.next();
                 if (!cfg.equals(e.cfg) || e.deferred != deferred) continue;
+                if (act != null && (e.ch.proxy == null || e.ch.proxy.id != act.id)) continue;
                 if (e.ch.socket.isClosed()) { it.remove(); closeQuietly(e.ch); continue; }
                 if (deferred) {
                     it.remove();
@@ -190,8 +194,16 @@ public final class PrewarmPool {
         // Target pool size: the user's full prewarmPool() while Telegram is
         // actively switching upstreams, but shrunk to a single insurance socket
         // when it is stably glued to one port with only a few mature sockets.
-        final int want = stablyConnected(now) ? Math.min(p.prewarmPool(), STABLE_POOL)
-                                              : p.prewarmPool();
+        int wantN = stablyConnected(now) ? Math.min(p.prewarmPool(), STABLE_POOL)
+                                         : p.prewarmPool();
+        // With an active (affinity) host, keep just a couple of warm sockets TO IT
+        // instead of rotating through random hosts (less radio/network noise).
+        final ProxyEntry act = activeHost();
+        if (act != null) {
+            if (deferred && !act.isFakeTls()) { drain(); return; }
+            wantN = Math.min(wantN, 2);
+        }
+        final int want = wantN;
 
         // Battery: don't build speculative sockets while the relay is idle. We
         // keep warming only while a Telegram client is connected (active > 0) or
@@ -221,7 +233,8 @@ public final class PrewarmPool {
         List<Entry> drop = new ArrayList<>();
         for (Entry e : snapshot) {
             boolean aged = (now - e.bornAt) >= holdMs;
-            boolean stale = !cfg.equals(e.cfg) || e.deferred != deferred;
+            boolean stale = !cfg.equals(e.cfg) || e.deferred != deferred
+                    || (act != null && (e.ch.proxy == null || e.ch.proxy.id != act.id));
             // Only do the expensive socket peek on the throttled cadence.
             boolean dead = peekLiveness && isDeadSocket(e.ch);
             if (aged || stale || dead) drop.add(e);
@@ -251,8 +264,9 @@ public final class PrewarmPool {
         // over-provision candidates + retries to ride out FakeTLS handshake
         // failures (~15-30%). Deferred mode needs FakeTLS hosts; full mode (commits
         // a DC anyway) can warm ANY alive proxy — far more candidates.
-        final List<ProxyEntry> cands =
-                pickCandidates(NetworkMonitor.currentMode(), need * 8 + 16, deferred);
+        final List<ProxyEntry> cands = act != null
+                ? java.util.Collections.nCopies(need * 3, act)
+                : pickCandidates(NetworkMonitor.currentMode(), need * 8 + 16, deferred);
         if (cands.isEmpty()) return;
         final java.util.concurrent.atomic.AtomicInteger ci = new java.util.concurrent.atomic.AtomicInteger(0);
         List<Thread> builders = new ArrayList<>();
@@ -280,6 +294,13 @@ public final class PrewarmPool {
     /** True when Telegram is sitting STABLY on a single relay port with only a few
      *  mature sockets — i.e. it is NOT thrashing between ports/upstreams, so the
      *  big warm pool would serve no failover and is shrunk to one socket. */
+    private static ProxyEntry activeHost() {
+        RelayManager m = RelayManager.INSTANCE;
+        if (m == null) return null;
+        ProxyEntry pin = m.pinnedEntry();
+        return pin != null ? pin : m.activeEntry();
+    }
+
     private boolean stablyConnected(long now) {
         List<RelayStats.LiveConn> live = RelayStats.liveConnections();
         int n = live.size();

@@ -13,16 +13,21 @@ public final class TrafficGovernor {
     /** Stay "busy" this long after the last busy second (avoid flapping). */
     private static final long HOLD_MS = 8_000L;
     /** Max parallel probes while Telegram is busy. */
-    private static final int BUSY_PROBE_CAP = 4;
+    private static final int BUSY_PROBE_CAP = 2;
 
     private static volatile boolean enabled = true;
     private static volatile long lastBusyAt = 0L;
     private static volatile long downBps = 0L;
 
-    /** Called once per second with the relay's current download rate. */
-    public static void tick(long relayDownBps, boolean downloadBurstSeen) {
+    /**
+     * Called once per second. {@code telegramActive} = Telegram moved data through
+     * the relay in the last few seconds. This is deliberately based on ACTIVITY,
+     * not on the achieved speed: when scanning chokes the link, Telegram never
+     * reaches a "busy" download rate — that's exactly when scanning must back off.
+     */
+    public static void tick(long relayDownBps, boolean telegramActive) {
         downBps = relayDownBps;
-        if (relayDownBps >= BUSY_BPS || downloadBurstSeen) {
+        if (relayDownBps >= BUSY_BPS || telegramActive) {
             lastBusyAt = System.currentTimeMillis();
         }
     }

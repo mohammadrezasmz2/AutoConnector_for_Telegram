@@ -474,10 +474,13 @@ object Fa : Strings {
     override val drawGraphsSub = "نمودارهای زنده در زبانه‌های متصل‌کننده و اسکن — برای صرفه‌جویی در باتری خاموش کنید"
 
     // --- رلهٔ سرعت‌محور، تنظیم خودکار هوشمند، سرعت در فهرست، توضیح (i) هر تنظیم
-    override val catalogBestToTg = "اتصال بهترین پروکسی در تلگرام"
+    override val catalogBestToTg = "بهترین ← تلگرام"
+    override val catalogBestRelay = "بهترین ← رله"
+    override val activeInRelayWord = "★ فعال در رله"
+    override val setupTgPorts = "تنظیم پورت‌ها در تلگرام"
     override fun catalogCopyTop(n: Int) = "کپی $n تای برتر"
     override fun catalogCopied(n: Int) = "$n لینک پروکسی کپی شد"
-    override val catalogSortHint = "⚡ مرتب‌شده بر اساس سرعت دانلود واقعی در تلگرام، سپس امتیاز. با ✈ هر پروکسی را مستقیم در تلگرام باز کنید."
+    override val catalogSortHint = "⚡ مرتب‌شده بر اساس سرعت دانلود واقعی در تلگرام، سپس امتیاز. «بهترین ← رله» آن را روی پورت‌های ۵۵۰۰۱/۵۵۰۰۲ می‌گذارد و اگر خراب شد خودکار عوض می‌شود؛ ✈ پروکسی را مستقیم در تلگرام باز می‌کند (بدون تعویض خودکار)."
     override val quickOpenTg = "باز کردن در تلگرام"
     override val speedField = "سرعت دانلود در تلگرام"
     override val speedNotMeasured = "هنوز اندازه‌گیری نشده"

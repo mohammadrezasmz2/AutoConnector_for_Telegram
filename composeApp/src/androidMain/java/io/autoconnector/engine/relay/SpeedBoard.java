@@ -45,6 +45,9 @@ public final class SpeedBoard {
         public volatile int stalls;
         public volatile long lastAt;
         public volatile long lastStallAt;
+        /** The most recent single session sample (not smoothed) and its time. */
+        public volatile double lastSampleKbps = -1;
+        public volatile long lastSampleAt;
 
         Stat(long proxyId, String mode) {
             this.proxyId = proxyId;
@@ -134,6 +137,8 @@ public final class SpeedBoard {
             if (kbps > st.bestKbps) st.bestKbps = kbps;
             st.samples++;
             st.lastAt = now;
+            st.lastSampleKbps = kbps;
+            st.lastSampleAt = now;
         }
         persist(st);
         AutoTuner.onSpeedSample(kbps);

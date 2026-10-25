@@ -1035,6 +1035,10 @@ class DesktopEngine(private val dataDir: File) : Engine {
         pushImmediate()
     }
     override fun stopHostTest() { io.autoconnector.engine.check.HostTester.stop(); pushImmediate() }
+    override fun useInRelay(id: Long) {
+        val entry = store.byId(id) ?: return
+        io.autoconnector.engine.relay.RelayManager.useInRelay(entry)
+    }
     /** LAN URLs neighbours use to reach the relay (web portal / SOCKS), or empty
      *  when sharing is off or the device has no LAN address. */
     private fun lanUrls(): List<String> {

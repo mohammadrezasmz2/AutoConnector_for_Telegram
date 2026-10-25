@@ -675,12 +675,17 @@ class AndroidEngine(context: Context) : Engine {
         for (c in RelayStats.liveConnections()) liveIds.add(c.upstreamProxyId)
         val sticky = RelayManager.currentStickyProxyIds()
         val pinnedId = RelayManager.currentPinnedId()
+        val activeId = RelayManager.currentActiveId()
         // Speeds are recorded under the network mode they were measured on; the
         // global (auto) view shows the speeds of the network we're on right now.
         val speedMode = if (mode == NetworkMode.UNKNOWN) NetworkMonitor.currentMode() else mode
         val rows = if (mode == NetworkMode.UNKNOWN) store.catalogRowsGlobal(CATALOG_POOL)
                    else store.catalogRowsForMode(mode, CATALOG_POOL)
-        val items = rows.map { r -> catalogItemOf(r, speedMode, now, nums, liveIds, sticky, pinnedId) }
+        val items = rows.map { r ->
+            catalogItemOf(r, speedMode, now, nums, liveIds, sticky, pinnedId).let {
+                if (it.id == activeId) it.copy(activeInRelay = true) else it
+            }
+        }
         return rankCatalog(items).take(CATALOG_SHOWN)
     }
 
@@ -688,7 +693,7 @@ class AndroidEngine(context: Context) : Engine {
      *  yet measured (by rating), then measured-slow, then cooling-down, then dead. */
     private fun rankCatalog(items: List<CatalogItem>): List<CatalogItem> {
         fun tier(c: CatalogItem): Int = when {
-            c.pinned -> -1
+            c.pinned || c.activeInRelay -> -1
             !c.alive -> 4
             c.coolingDown -> 3
             c.speedKbps >= SpeedBoard.SLOW_KBPS.toInt() -> 0
@@ -863,6 +868,14 @@ class AndroidEngine(context: Context) : Engine {
         io.autoconnector.engine.check.HostTester.start(store, p, Prefs(ctx).relayConnectTimeoutMs())
     }
     override fun stopHostTest() { io.autoconnector.engine.check.HostTester.stop() }
+    override fun useInRelay(id: Long) {
+        val entry = store.byId(id) ?: return
+        if (!RelayManager.useInRelay(entry)) {
+            appendLog("⚠ relay not running — turn the Connector on first")
+        }
+        catalogCache.clear()
+        pushImmediate()
+    }
     private fun isAccessibilityGranted(): Boolean = try {
         val flat = android.provider.Settings.Secure.getString(
             ctx.contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""

@@ -51,6 +51,22 @@ public final class RelayManager {
     private volatile PrewarmPool prewarm;
     /** Dead-upstream / stalled-download supervisor + governor/auto-tune tick. */
     private volatile StallWatchdog watchdog;
+
+    /**
+     * ACTIVE upstream ("session affinity"). Telegram opens many sockets at once;
+     * sending each one to a different random proxy made downloads land on random
+     * (often bad) hosts and flooded the network with handshakes. Instead, once a
+     * host carries Telegram, every new socket goes to that same host — exactly
+     * like a proxy entered directly in Telegram — until it fails, stalls or turns
+     * out slow; then a new one is elected (by measured speed). Unlike a pin, the
+     * active host is switched automatically.
+     */
+    private volatile ProxyEntry active;
+    private volatile long activeSince;
+    /** Only one Telegram socket at a time runs the election race; the others wait
+     *  for its result instead of each launching its own storm of handshakes. */
+    private final java.util.concurrent.locks.ReentrantLock electLock =
+            new java.util.concurrent.locks.ReentrantLock();
     public PrewarmPool prewarm() { return prewarm; }
 
     public RelayManager(int portA, int portB, ProxyStore store,
@@ -110,6 +126,57 @@ public final class RelayManager {
 
     /** The user-pinned upstream entry, or null. */
     public ProxyEntry pinnedEntry() { return pinned; }
+
+    /** The current active (affinity) upstream, or null. */
+    public ProxyEntry activeEntry() { return active; }
+
+    public long activeSince() { return activeSince; }
+
+    public java.util.concurrent.locks.ReentrantLock electLock() { return electLock; }
+
+    /** Makes {@code p} the host every new Telegram socket goes to. */
+    public void setActive(ProxyEntry p, String why) {
+        if (p == null) return;
+        ProxyEntry prev = active;
+        if (prev != null && prev.id == p.id) return;
+        active = p;
+        activeSince = System.currentTimeMillis();
+        upstreamA.set(p);
+        upstreamB.set(p);
+        RelayLog.emit("★ active upstream → " + p.host + ":" + p.port + " (" + why + ")");
+    }
+
+    /** Drops {@code proxyId} as the active host (if it is). Returns true if it was. */
+    public boolean clearActive(long proxyId, String why) {
+        ProxyEntry a = active;
+        if (a == null || a.id != proxyId) return false;
+        active = null;
+        RelayLog.emit("☆ active upstream " + a.host + ":" + a.port + " dropped (" + why
+                + ") — electing a new one");
+        return true;
+    }
+
+    /** Id of the current active upstream (0 = none), for the UI. */
+    public static long currentActiveId() {
+        RelayManager m = INSTANCE;
+        ProxyEntry a = m != null ? m.active : null;
+        return a != null ? a.id : 0;
+    }
+
+    /**
+     * Catalog «use in relay»: make {@code p} the active host right now and close
+     * the current relay sockets so Telegram reconnects through it at once. Unlike
+     * a pin, the relay still switches away automatically if the host fails.
+     */
+    public static boolean useInRelay(ProxyEntry p) {
+        RelayManager m = INSTANCE;
+        if (m == null || p == null) return false;
+        m.pinned = null;
+        m.setActive(p, "chosen in the catalog");
+        RelayStats.closeOnPort(m.portA);
+        RelayStats.closeOnPort(m.portB);
+        return true;
+    }
 
     /** Re-creates and restarts the two listeners so they pick up a changed bind
      *  address (loopback ↔ 0.0.0.0) when "share over LAN" is toggled. In-flight
@@ -195,6 +262,7 @@ public final class RelayManager {
             ProxyEntry bad = ref(prev).getAndSet(null);
             if (bad != null) {
                 penalize(bad);
+                clearActive(bad.id, "Telegram switched relay port");
                 String msg = "⟳ Telegram switched from port " + prev + " to " + port
                         + " — upstream " + bad.host + ":" + bad.port + " demoted in the rating";
                 listener.event(msg);
@@ -274,6 +342,7 @@ public final class RelayManager {
         if (pinned == null || p == null || pinned.id != p.id) {
             ref(port).compareAndSet(p, null);
         }
+        if (p != null) clearActive(p.id, "failed");
         penalize(p);
     }
 

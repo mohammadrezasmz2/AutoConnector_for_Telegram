@@ -100,6 +100,7 @@ fun CatalogContent(
     onManageMode: (String) -> Unit,
     onClick: (CatalogItem) -> Unit,
     onQuickOpen: (CatalogItem) -> Unit = {},
+    onUseInRelay: (CatalogItem) -> Unit = {},
     onCopyTop: (List<CatalogItem>) -> Unit = {},
     // Changes every engine tick so the (cached, engine-side re-ranked) list is
     // re-read and the order updates live.
@@ -184,27 +185,38 @@ fun CatalogContent(
             val topAlive = shown.filter { it.alive && !it.coolingDown }.take(10)
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // Best host → the relay's ACTIVE upstream (Telegram on 55001/55002
+                // switches to it now, and the relay still auto-switches on failure).
                 Button(
+                    onClick = { best?.let(onUseInRelay) },
+                    enabled = best != null,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                ) {
+                    Icon(Icons.Filled.Bolt, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(t.catalogBestRelay, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                // Best host straight into Telegram (direct proxy, no auto-switch).
+                OutlinedButton(
                     onClick = { best?.let(onQuickOpen) },
                     enabled = best != null,
-                    modifier = Modifier.weight(1.4f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 ) {
                     Icon(Icons.Filled.Send, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(t.catalogBestToTg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                OutlinedButton(
+                androidx.compose.material3.IconButton(
                     onClick = { onCopyTop(topAlive) },
                     enabled = topAlive.isNotEmpty(),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                    modifier = Modifier.size(40.dp),
                 ) {
-                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(t.catalogCopyTop(topAlive.size), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(Icons.Filled.ContentCopy, contentDescription = t.catalogCopyTop(topAlive.size), tint = AppColors.accent)
                 }
             }
             Text(
@@ -292,6 +304,10 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(8.dp))
+            if (p.activeInRelay) {
+                Text("★", color = AppColors.green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Spacer(Modifier.width(6.dp))
+            }
             if (p.alive) Text(t.aliveShort, color = AppColors.green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             else Text(t.deadShort, color = AppColors.red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             Spacer(Modifier.width(8.dp))
@@ -431,6 +447,9 @@ fun CatalogDetailPage(
                         )
                         if (p.speedSamples > 0 || p.stalls > 0) {
                             DetailRow(Icons.Filled.NetworkCheck, " ", t.speedSamples(p.speedSamples, p.stalls), AppColors.onSurfaceMuted)
+                        }
+                        if (p.activeInRelay) {
+                            DetailRow(Icons.Filled.Bolt, t.relayNow, t.activeInRelayWord, AppColors.green)
                         }
                         if (p.coolingDown) {
                             DetailRow(Icons.Filled.Schedule, t.statusLabel, t.coolingDownWord, AppColors.amber)

@@ -393,10 +393,13 @@ interface Strings {
 
     // --- Speed-first relay, smart auto-tune, catalog speed, per-setting (i) info.
     // Defaulted to English so every locale compiles; translated where provided.
-    val catalogBestToTg: String get() = "Connect best in Telegram"
+    val catalogBestToTg: String get() = "Best → Telegram"
+    val catalogBestRelay: String get() = "Best → relay"
+    val activeInRelayWord: String get() = "★ active in relay"
+    val setupTgPorts: String get() = "Set up ports in Telegram"
     fun catalogCopyTop(n: Int): String = "Copy top $n"
     fun catalogCopied(n: Int): String = "$n proxy links copied"
-    val catalogSortHint: String get() = "⚡ Sorted by real Telegram download speed, then by rating. Tap ✈ to open a proxy in Telegram."
+    val catalogSortHint: String get() = "⚡ Sorted by real Telegram download speed, then rating. \"Best → relay\" makes the relay (55001/55002) use it and still auto-switch if it fails; ✈ opens a proxy directly in Telegram (no auto-switch)."
     val quickOpenTg: String get() = "Open in Telegram"
     val speedField: String get() = "Download speed in Telegram"
     val speedNotMeasured: String get() = "not measured yet"

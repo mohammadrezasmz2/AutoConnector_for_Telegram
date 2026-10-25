@@ -32,7 +32,13 @@ public final class StallWatchdog {
     /** Download went silent (with requests pending) for this long → stalled. */
     static final long STALL_MS = 20_000L;
 
+    /** An active host whose latest real download sample is below this is replaced. */
+    static final double SLOW_SWITCH_KBPS = 40.0;
+    /** Without a known-better host, allow at most this many slow-switches per 5 min. */
+    private static final int MAX_EXPLORE_SWITCHES = 3;
+
     private static volatile boolean guardEnabled = true;
+    private final java.util.ArrayDeque<Long> switchTimes = new java.util.ArrayDeque<>();
 
     public static void setGuardEnabled(boolean on) { guardEnabled = on; }
     public static boolean isGuardEnabled() { return guardEnabled; }
@@ -81,9 +87,10 @@ public final class StallWatchdog {
         long bps = prevDown < 0 ? 0 : Math.max(0, down - prevDown);
         prevDown = down;
 
-        boolean burst = false;
+        boolean tgActive = false;
         for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
-            if (c.meter.downloadingWithin(now, 3_000L)) burst = true;
+            // Telegram moved data through the relay just now (either direction).
+            if (now - c.lastDataAt.get() < 3_000L && c.bytesUp.get() + c.bytesDown.get() > 0) tgActive = true;
             if (!guardEnabled) continue;
             if (c.upstreamProxyId <= 0 || c.killer == null || c.killReason != null) continue;
             if (manager.isPinned(c.upstreamProxyId)) continue;   // user forced this host
@@ -102,8 +109,37 @@ public final class StallWatchdog {
                 cut(c, "download stalled for " + (STALL_MS / 1000) + " s", false);
             }
         }
-        TrafficGovernor.tick(bps, burst);
+        TrafficGovernor.tick(bps, tgActive);
+        if (guardEnabled) checkSlowActive(now);
         AutoTuner.tick(manager.isPortBouncing());
+    }
+
+    /**
+     * Replaces the active host when its latest REAL download sample (measured
+     * while Telegram was downloading through it) is slow. Its downloading sockets
+     * are closed so Telegram moves to the newly elected host right away. Limited
+     * so that on a network where every host is slow we don't keep thrashing.
+     */
+    private void checkSlowActive(long now) {
+        ProxyEntry act = manager.activeEntry();
+        if (act == null || manager.isPinned(act.id)) return;
+        NetworkMode mode = NetworkMonitor.currentMode();
+        SpeedBoard.Stat st = SpeedBoard.get(act.id, mode);
+        if (st == null || st.lastSampleAt <= manager.activeSince()) return;   // no sample as active yet
+        if (now - st.lastSampleAt > 30_000L || st.lastSampleKbps >= SLOW_SWITCH_KBPS) return;
+        if (now - manager.activeSince() < 20_000L) return;                    // give it a fair chance
+        while (!switchTimes.isEmpty() && now - switchTimes.peekFirst() > 5 * 60_000L) switchTimes.pollFirst();
+        double cur = st.lastSampleKbps;
+        boolean betterKnown = SpeedBoard.bestKbps(mode) > Math.max(2 * cur, SLOW_SWITCH_KBPS);
+        if (!betterKnown && switchTimes.size() >= MAX_EXPLORE_SWITCHES) return;
+        switchTimes.addLast(now);
+        manager.clearActive(act.id, "slow: " + AutoTuner.fmtKbps(cur) + " while downloading");
+        for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
+            if (c.upstreamProxyId != act.id || c.killer == null || c.killReason != null) continue;
+            if (!c.meter.downloadingWithin(now, 30_000L) && now - c.lastDownAt.get() > 5_000L) continue;
+            c.killReason = "slow host — moving Telegram to a faster one";
+            try { c.killer.run(); } catch (Throwable ignored) {}
+        }
     }
 
     private void cut(RelayStats.LiveConn c, String reason, boolean dead) {
