@@ -1,11 +1,15 @@
 name: Build Android APK
 
 # Builds an installable APK on every push to main (and on demand from the
-# Actions tab). Download it from the run's "Artifacts" section.
+# Actions tab). The APK is attached to the run's "Artifacts" and also pushed to
+# the `ci-apk` branch; on failure the build log is pushed to `ci-logs`.
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   apk:
@@ -29,10 +33,34 @@ jobs:
       - name: Build debug APK
         env:
           GRADLE_OPTS: -Xmx3g
-        run: gradle :composeApp:assembleDebug --stacktrace --no-daemon
+        run: |
+          set -o pipefail
+          gradle :composeApp:assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+
+      - name: Report compile errors
+        if: failure()
+        run: |
+          grep -E '^e: |error:|FAILURE|What went wrong' -A3 build.log | head -40 | while IFS= read -r l; do
+            echo "::error::${l}"
+          done
+          mkdir -p /tmp/logs && cp build.log /tmp/logs/
+          cd /tmp/logs
+          git init -q && git checkout -q -b ci-logs
+          git add build.log
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "build log ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs
 
       - uses: actions/upload-artifact@v4
         with:
           name: AutoConnector-android-debug
           path: composeApp/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      - name: Publish APK to the ci-apk branch
+        run: |
+          mkdir -p /tmp/apk && cp composeApp/build/outputs/apk/debug/*.apk /tmp/apk/AutoConnector-1.2.0-speed.apk
+          cd /tmp/apk
+          git init -q && git checkout -q -b ci-apk
+          git add AutoConnector-1.2.0-speed.apk
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "APK ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-apk
