@@ -250,7 +250,7 @@ fun QuickSettingsPage(cb: MoreCallbacks, onBack: () -> Unit) {
                 }
 
                 // 1) Дробление проксирования — socket wire shaping.
-                SubTitle(t.expEngineTitle)
+                SubTitle(t.expEngineTitle, t.infoProxyEngine)
                 cb.expEngineOptions.forEach { opt ->
                     QuickChoice(opt.label, if (showHelp) opt.description else "", s.expEngineMode == opt.code) {
                         cb.onUpdateSettings(s.copy(expEngineMode = opt.code)); onBack()
@@ -260,7 +260,7 @@ fun QuickSettingsPage(cb: MoreCallbacks, onBack: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
 
                 // 2) Движок коннекта — how the relay finds a working upstream.
-                SubTitle(t.expConnectTitle)
+                SubTitle(t.expConnectTitle, t.infoConnectEngine)
                 cb.connectEngineOptions.forEach { opt ->
                     QuickChoice(opt.label, if (showHelp) opt.description else "", s.relayConnectMode == opt.code) {
                         cb.onUpdateSettings(s.copy(relayConnectMode = opt.code)); onBack()
@@ -270,7 +270,7 @@ fun QuickSettingsPage(cb: MoreCallbacks, onBack: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
 
                 // 3) Анти-DPI — handshake trick (AUTO/NONE entries are special).
-                SubTitle(t.antiDpiTrick)
+                SubTitle(t.antiDpiTrick, t.infoAntiDpi)
                 var seenSpecial = 0
                 cb.handshakeOptions.forEach { opt ->
                     val label = when {
@@ -373,6 +373,10 @@ private fun SettingsPage(cb: MoreCallbacks) {
     var lang by remember { mutableStateOf(s.langCode) }
     var themeMode by remember { mutableStateOf(s.themeMode) }
     var drawGraphs by remember { mutableStateOf(s.drawGraphs) }
+    var speedFirst by remember { mutableStateOf(s.speedPriority) }
+    var stallGuard by remember { mutableStateOf(s.stallGuard) }
+    var autoTune by remember { mutableStateOf(s.autoTune) }
+    var tgFirst by remember { mutableStateOf(s.tgFirstScan) }
     var expEngine by remember { mutableStateOf(s.expEngineMode) }
     var connEngine by remember { mutableStateOf(s.relayConnectMode) }
     var raceWidth by remember { mutableStateOf(s.relayRaceWidth) }
@@ -430,6 +434,10 @@ private fun SettingsPage(cb: MoreCallbacks) {
                 langCode = lang,
                 themeMode = themeMode,
                 drawGraphs = drawGraphs,
+                speedPriority = speedFirst,
+                stallGuard = stallGuard,
+                autoTune = autoTune,
+                tgFirstScan = tgFirst,
                 expEngineMode = expEngine,
                 netLogEnabled = netLog,
                 relayConnectMode = connEngine,
@@ -492,8 +500,23 @@ private fun SettingsPage(cb: MoreCallbacks) {
         ChoiceRow(t.themeAuto, "", selected = themeMode == 0) { themeMode = 0; save() }
         ChoiceRow(t.themeLight, "", selected = themeMode == 1) { themeMode = 1; save() }
         ChoiceRow(t.themeDark, "", selected = themeMode == 2) { themeMode = 2; save() }
-        SwitchRow(t.drawGraphsLabel, drawGraphs) { drawGraphs = it; save() }
+        SwitchRow(t.drawGraphsLabel, drawGraphs, t.infoDrawGraphs) { drawGraphs = it; save() }
         Text(t.drawGraphsSub, color = AppColors.onSurfaceMuted, fontSize = 13.sp)
+
+        // Speed-first relay + smart auto-tune — the switches that decide how fast
+        // Telegram actually is through the relay.
+        Section(t.speedSection) { help = t.speedSection to t.speedSectionHelp }
+        SwitchRow(t.speedPriorityLabel, speedFirst, t.speedPriorityInfo) { speedFirst = it; save() }
+        SwitchRow(t.stallGuardLabel, stallGuard, t.stallGuardInfo) { stallGuard = it; save() }
+        SwitchRow(t.autoTuneLabel, autoTune, t.autoTuneInfo) { autoTune = it; save() }
+        if (autoTune) {
+            val sum = cb.state.autoTuneSummary
+            Text(
+                if (sum.isNotBlank()) t.autoTuneNow(sum) else t.autoTuneWaiting,
+                color = AppColors.green, fontSize = 13.sp,
+            )
+        }
+        SwitchRow(t.tgFirstLabel, tgFirst, t.tgFirstInfo) { tgFirst = it; save() }
 
         Section(t.relayPorts) { help = t.relayPorts to t.relayPortsHelp }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -559,7 +582,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
         }
 
         // 1) Subscription re-download intensity — minutes, separately per mode.
-        Section(t.subIntensityTitle) { help = t.subIntensityTitle to t.subIntensityHint }
+        Section(t.subIntensityTitle) { help = t.subIntensityTitle to (t.subIntensityHint + "\n\n" + t.infoSubInterval) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             LabeledNumField(subVpn, { subVpn = it; save() }, "${modeLabel("vpn")}, ${t.minShort}", Modifier.weight(1f))
             LabeledNumField(subLte, { subLte = it; save() }, "${modeLabel("lte")}, ${t.minShort}", Modifier.weight(1f))
@@ -576,11 +599,11 @@ private fun SettingsPage(cb: MoreCallbacks) {
         // 2) Base scan speed — period, batch-per-thread, threads. Each row is a
         // wrapping explanation on the left + a small number box on the right.
         Section(t.baseScanTitle) { help = t.baseScanTitle to t.baseScanHelp }
-        LabeledNumField(checkInt, { checkInt = it; save() }, t.baseScanPeriod, Modifier.fillMaxWidth())
-        LabeledNumField(batch, { batch = it; save() }, t.baseScanBatch, Modifier.fillMaxWidth())
-        LabeledNumField(conc, { conc = it; save() }, t.baseScanThreads, Modifier.fillMaxWidth())
+        LabeledNumField(checkInt, { checkInt = it; save() }, t.baseScanPeriod, Modifier.fillMaxWidth(), t.infoBasePeriod)
+        LabeledNumField(batch, { batch = it; save() }, t.baseScanBatch, Modifier.fillMaxWidth(), t.infoBaseBatch)
+        LabeledNumField(conc, { conc = it; save() }, t.baseScanThreads, Modifier.fillMaxWidth(), t.infoBaseThreads)
         // Anti-flood floor: never re-scan the same host more often than this.
-        LabeledNumField(minRescan, { minRescan = it; save() }, t.minRescanLabel, Modifier.fillMaxWidth())
+        LabeledNumField(minRescan, { minRescan = it; save() }, t.minRescanLabel, Modifier.fillMaxWidth(), t.infoMinRescan)
 
         // 3) Adaptive speed — threshold (compact field) + acceleration log slider.
         Section(t.adaptiveSpeed) { help = t.adaptiveSpeed to t.adaptiveHelp }
@@ -617,16 +640,19 @@ private fun SettingsPage(cb: MoreCallbacks) {
             manyThr, cb.scanParamsFor(baseMin, baseBatch, baseConc, (spWp.toFloatOrNull() ?: 1f) * lazyM))
 
         Section(t.netBattery) { help = t.netBattery to t.netBatteryHelp }
-        SwitchRow(t.onlyWifi, wifiOnly) { wifiOnly = it; save() }
-        SwitchRow(t.onlyCharging, charging) { charging = it; save() }
-        SwitchRow(t.skipLowBattery, skipLow) { skipLow = it; save() }
+        SwitchRow(t.onlyWifi, wifiOnly, t.infoOnlyWifi) { wifiOnly = it; save() }
+        SwitchRow(t.onlyCharging, charging, t.infoOnlyCharging) { charging = it; save() }
+        SwitchRow(t.skipLowBattery, skipLow, t.infoSkipLowBattery) { skipLow = it; save() }
 
         // --- Connection & block bypass — one merged section -------------
         // Connect engine + parallel-race width + proxying engine + anti-DPI
         // tricks, all under a single header (was four separate sections).
         Section(t.connectionSection) { help = t.connectionSection to t.connectionSectionHelp }
+        if (autoTune) {
+            Text(t.autoTuneManaged, color = AppColors.amber, fontSize = 13.sp)
+        }
 
-        SubTitle(t.expConnectTitle)
+        SubTitle(t.expConnectTitle, t.infoConnectEngine)
         ExpEnginePicker(cb.connectEngineOptions, connEngine, connExpanded, { connExpanded = it }) { connEngine = it; save() }
         cb.connectEngineOptions.firstOrNull { it.code == connEngine }?.description
             ?.takeIf { it.isNotBlank() }?.let {
@@ -638,7 +664,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
         // Parallel-race width — only when the race connect engine (code 1) is on.
         // Slider over 1..30 upstreams dialed simultaneously.
         if (connEngine == 1) {
-            SubTitle("${t.raceWidthTitle}: $raceWidth")
+            SubTitle("${t.raceWidthTitle}: $raceWidth", t.infoRaceWidth)
             Slider(
                 value = raceWidth.toFloat(),
                 onValueChange = { raceWidth = (it + 0.5f).toInt().coerceIn(1, 30) },
@@ -649,7 +675,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
         }
 
         // Host-selection breadth: proven (0) ↔ widest (100). Linear 0..100.
-        SubTitle("${t.breadthTitle}: $breadth%")
+        SubTitle("${t.breadthTitle}: $breadth%", t.infoBreadth)
         Slider(
             value = breadth.toFloat(),
             onValueChange = { breadth = it.toInt().coerceIn(0, 100) },
@@ -664,7 +690,8 @@ private fun SettingsPage(cb: MoreCallbacks) {
 
         // Per-host connect timeout, log-scaled 100 ms .. 15000 ms.
         SubTitle("${t.connTimeoutTitle}: " +
-            (if (connTimeout >= 1000) "${connTimeout / 1000}.${(connTimeout % 1000) / 100} c" else "$connTimeout ${t.unitMs}"))
+            (if (connTimeout >= 1000) "${connTimeout / 1000}.${(connTimeout % 1000) / 100} ${t.unitSec}" else "$connTimeout ${t.unitMs}"),
+            t.infoConnTimeout)
         Slider(
             value = (log10(connTimeout.coerceIn(100, 15000).toDouble() / 100.0) / log10(150.0)).toFloat(),
             onValueChange = { connTimeout = (100.0 * 150.0.pow(it.toDouble())).toInt().coerceIn(100, 15000) },
@@ -672,7 +699,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
         )
         Text(t.connTimeoutHelp, color = AppColors.onSurfaceMuted, fontSize = 13.sp)
 
-        SubTitle(t.expEngineTitle)
+        SubTitle(t.expEngineTitle, t.infoProxyEngine)
         ExpEnginePicker(cb.expEngineOptions, expEngine, expExpanded, { expExpanded = it }) { expEngine = it; save() }
         cb.expEngineOptions.firstOrNull { it.code == expEngine }?.description
             ?.takeIf { it.isNotBlank() }?.let {
@@ -682,18 +709,18 @@ private fun SettingsPage(cb: MoreCallbacks) {
                 )
             }
 
-        SubTitle(t.antiDpiTrick)
+        SubTitle(t.antiDpiTrick, t.infoAntiDpi)
         HandshakePicker(cb.handshakeOptions, hs, hsExpanded, { hsExpanded = it }) { hs = it; save() }
-        SwitchRow(t.onlyFakeTls, fakeTls) { fakeTls = it; save() }
+        SwitchRow(t.onlyFakeTls, fakeTls, t.infoOnlyFakeTls) { fakeTls = it; save() }
 
         SubTitle(t.applyDpiTo)
-        SwitchRow(t.toRelay, dpiRelay) { dpiRelay = it; save() }
-        SwitchRow(t.toProbes, dpiProbes) { dpiProbes = it; save() }
-        SwitchRow(t.toDirect, dpiDirect) { dpiDirect = it; save() }
+        SwitchRow(t.toRelay, dpiRelay, t.infoDpiRelay) { dpiRelay = it; save() }
+        SwitchRow(t.toProbes, dpiProbes, t.infoDpiProbes) { dpiProbes = it; save() }
+        SwitchRow(t.toDirect, dpiDirect, t.infoDpiDirect) { dpiDirect = it; save() }
 
         // --- Network exchange log — its own section (Section draws the rule) --
         Section(t.netLogSection)
-        SwitchRow(t.netLog, netLog) { netLog = it; save() }
+        SwitchRow(t.netLog, netLog, t.infoNetLog) { netLog = it; save() }
         Text(t.netLogSub, color = AppColors.onSurfaceMuted, fontSize = 13.sp)
         if (netLog && cb.netLogPath != null) {
             Text(
@@ -712,7 +739,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
 
         // --- Experimental: pre-warm standby upstream sockets -----------------
         Section(t.prewarmTitle) { help = t.prewarmTitle to t.prewarmHelp }
-        SwitchRow(t.prewarmEnable, pwEnabled) { pwEnabled = it; save() }
+        SwitchRow(t.prewarmEnable, pwEnabled, t.infoPrewarm) { pwEnabled = it; save() }
         if (pwEnabled) {
             ChoiceRow(t.prewarmModeDeferred, t.prewarmModeDeferredSub, pwMode == 0) { pwMode = 0; save() }
             ChoiceRow(t.prewarmModeFull, t.prewarmModeFullSub, pwMode == 1) { pwMode = 1; save() }
@@ -803,7 +830,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
         var confirmModeForget by remember { mutableStateOf<String?>(null) }
         // Where settings + the proxy DB actually live (the location can fall back
         // off %APPDATA% if that's not writable, so always show the real path).
-        Text("Data folder / Папка данных:", color = AppColors.onSurfaceMuted, fontSize = 13.sp)
+        Text("Data folder:", color = AppColors.onSurfaceMuted, fontSize = 13.sp)
         Text(cb.dataDirPath, fontFamily = monospaceFontFamily(), fontSize = 12.sp, color = AppColors.onSurfaceMuted)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = cb.onOpenDataFolder, modifier = Modifier.weight(1f)) { Text("Open folder", fontSize = 14.sp) }
@@ -1183,18 +1210,20 @@ private fun NumField(value: String, onChange: (String) -> Unit, label: String, m
 /** A wrapping explanation on the left (takes the remaining width, multi-line) plus
  *  a small right-aligned numeric box — used by the scan-speed / subscription fields. */
 @Composable
-private fun LabeledNumField(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier) {
+private fun LabeledNumField(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, info: String? = null) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 14.sp, color = AppColors.onSurface)
+        if (info != null) InfoButton(label, info)
         Spacer(Modifier.width(8.dp))
         NumField(value, onChange, "", Modifier.width(72.dp))
     }
 }
 
 @Composable
-private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(label: String, value: Boolean, info: String? = null, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f), fontSize = 16.sp)
+        if (info != null) InfoButton(label, info)
         Switch(value, onChange)
     }
 }
@@ -1518,8 +1547,24 @@ private fun StatsPage(cb: MoreCallbacks) {
 }
 
 @Composable
-private fun SubTitle(title: String) {
-    Text(title, color = AppColors.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.padding(top = 4.dp))
+private fun SubTitle(title: String, info: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, color = AppColors.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f, fill = false))
+        if (info != null) {
+            Spacer(Modifier.width(4.dp))
+            InfoButton(title, info)
+        }
+    }
+}
+
+/** Small (i) button that opens a scrollable explanation of one setting. */
+@Composable
+private fun InfoButton(title: String, body: String) {
+    var open by remember { mutableStateOf(false) }
+    IconButton(onClick = { open = true }, modifier = Modifier.size(28.dp)) {
+        Icon(Icons.Filled.Info, LocalStrings.current.details, tint = AppColors.accent, modifier = Modifier.size(19.dp))
+    }
+    if (open) HelpDialog(title = title, body = body, onDismiss = { open = false })
 }
 
 private fun fmt2(v: Double): String {

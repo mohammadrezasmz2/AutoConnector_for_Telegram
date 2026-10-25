@@ -39,48 +39,48 @@ public final class WireShaper {
     /** A selectable experimental engine. {@code code} is the persisted int. */
     public enum Mode {
         /** Reference path — no shaping, no socket-option changes. Default. */
-        OFF(0, "off", "Выключено (эталонный путь)",
-                "Стандартный релей без изменений — рабочий проверенный путь."),
+        OFF(0, "off", "Off (reference path)",
+                "Standard relay without changes — the proven path."),
         /** Heavily fragment only the first few writes (handshake + first data). */
-        SPLIT_FIRST_N(1, "split_first", "Дробление первых пакетов",
-                "Режет первые ~4 исходящих записи (рукопожатие + начало) на "
-                + "крошечные TCP-сегменты с задержкой; дальше — без изменений. "
-                + "Лёгкий: цель — сбить сигнатурный матч на старте, не теряя скорость."),
+        SPLIT_FIRST_N(1, "split_first", "Split the first packets",
+                "Cuts the first ~4 outgoing writes (handshake + start) into "
+                + "tiny delayed TCP segments; after that, unchanged. "
+                + "Light: aims to break signature matching at the start without losing speed."),
         /** Fragment every outbound write into moderate random segments. */
-        FRAGMENT_ALL(2, "frag_all", "Фрагментация всего потока",
-                "Каждую исходящую запись дробит на сегменты ~80–1200 Б "
-                + "(TCP_NODELAY вкл). Сбивает анализ по всему потоку, но тяжелее по скорости."),
+        FRAGMENT_ALL(2, "frag_all", "Fragment the whole stream",
+                "Splits every outgoing write into ~80–1200 B segments "
+                + "(TCP_NODELAY on). Defeats whole-stream analysis but costs speed."),
         /** FakeTLS: emit many small TLS records. Non-TLS: falls back to frag. */
-        TLS_RECHUNK(3, "tls_rechunk", "Переразбивка TLS-records",
-                "Для FakeTLS-прокси (ee): app-data разбивается на множество мелких "
-                + "TLS-records (~80–700 Б) вместо одного крупного — против DPI по размеру records. "
-                + "Для обычных MT/SOCKS5 — деградирует во фрагментацию."),
+        TLS_RECHUNK(3, "tls_rechunk", "Re-split TLS records",
+                "For FakeTLS proxies (ee): app data is split into many small "
+                + "TLS records (~80–700 B) instead of one large one — against DPI by record size. "
+                + "For plain MT/SOCKS5 it falls back to fragmentation."),
         /** Buffer + Nagle on: send larger batches, mimic a bulk TLS download. */
-        COALESCE_DELAY(4, "coalesce", "Коалесинг (батчинг)",
-                "Буферизует мелкие записи и шлёт крупными порциями (TCP_NODELAY выкл, "
-                + "задержка до ~12 мс) — маскирует обмен под bulk-загрузку. Единственный "
-                + "стабильный режим, но душит загрузку/отправку медиа."),
+        COALESCE_DELAY(4, "coalesce", "Coalescing (batching)",
+                "Buffers small writes and sends them in larger chunks (TCP_NODELAY off, "
+                + "up to ~12 ms delay) — disguises the exchange as a bulk download. The only "
+                + "stable mode, but it chokes media download/upload."),
 
         // --- Coalescing-family experiments (fix media throughput, keep evasion) ---
 
         /** Batch SMALL writes (hide MTProto cadence), pass LARGE writes straight
          *  through (media data), with a shorter delay. Aimed at uploads + mixed. */
-        COALESCE_ADAPTIVE(5, "coalesce_adaptive", "Коалесинг адаптивный",
-                "Мелкие записи батчит (прячет «мелко-пакетную» сигнатуру MTProto), "
-                + "а крупные (медиа-данные) пропускает сразу, задержка короче (~4 мс). "
-                + "Цель — не душить аплоад/крупный трафик, оставаясь незаметным."),
+        COALESCE_ADAPTIVE(5, "coalesce_adaptive", "Adaptive coalescing",
+                "Batches small writes (hides the small-packet MTProto signature), "
+                + "but passes large ones (media) immediately, with a shorter delay (~4 ms). "
+                + "Aims not to choke uploads / large traffic while staying unnoticed."),
 
         /** Coalesce only the opening window, then full passthrough — bets that DPI
          *  classifies a flow at its start. Aimed at downloads. */
-        COALESCE_WARMUP(6, "coalesce_warmup", "Коалесинг старта",
-                "Батчит только первые ~128 КБ соединения, дальше — полностью прозрачно. "
-                + "Расчёт: DPI «решает» в начале потока; после прогрева медиа идёт на полной скорости. "
-                + "Если связь отваливается на больших файлах — значит DPI смотрит постоянно, верните обычный коалесинг."),
+        COALESCE_WARMUP(6, "coalesce_warmup", "Start-only coalescing",
+                "Batches only the first ~128 KB of a connection, then fully transparent. "
+                + "Idea: DPI decides at the start of a stream; after warm-up media runs at full speed. "
+                + "If big files drop the connection, DPI is watching all the time — go back to normal coalescing."),
 
         /** No userspace delay — just TCP_NODELAY off; let the kernel (Nagle) coalesce. */
-        NAGLE_ONLY(7, "nagle", "Только Nagle (ядро)",
-                "Без искусственной задержки: только TCP_NODELAY выкл — ядро само склеивает "
-                + "мелкие записи (Nagle). Самый лёгкий по скорости; проверить, хватает ли его маскировки."),
+        NAGLE_ONLY(7, "nagle", "Nagle only (kernel)",
+                "No artificial delay: only TCP_NODELAY off — the kernel itself merges "
+                + "small writes (Nagle). The lightest on speed; try whether its disguise is enough."),
 
         // --- New coalescing engines: media-friendly, TCP_NODELAY ON ---------------
         // The older coalescing modes (4–6) keep Nagle ON, so the kernel holds the
@@ -91,25 +91,25 @@ public final class WireShaper {
         /** Smart media engine: batch small MTProto control packets at the start to
          *  keep the bulk-TLS look, pass large writes straight through, and LATCH to
          *  full passthrough after the opening window / first big burst. */
-        COALESCE_TURBO(8, "coalesce_turbo", "Коалесинг турбо (медиа)",
-                "Лучший для медиа. В начале прячет мелко-пакетную сигнатуру (батчит "
-                + "записи <512 Б, задержка ~3 мс, TCP_NODELAY ВКЛ), крупные пропускает сразу. "
-                + "После ~256 КБ или первой большой порции защёлкивается в полный проброс — "
-                + "медиа идёт на полной скорости, а старт всё равно выглядит как bulk-TLS."),
+        COALESCE_TURBO(8, "coalesce_turbo", "Turbo coalescing (media)",
+                "Best for media. At the start it hides the small-packet signature (batches "
+                + "writes <512 B, ~3 ms delay, TCP_NODELAY ON), large ones pass immediately. "
+                + "After ~256 KB or the first large chunk it latches into full pass-through — "
+                + "media runs at full speed while the start still looks like bulk TLS."),
 
         /** Lightest masking: batch only tiny control packets, everything else goes
          *  immediately. TCP_NODELAY ON so a flush is never double-buffered. */
-        COALESCE_LIGHT(9, "coalesce_light", "Коалесинг мягкий",
-                "Минимум маскировки, максимум скорости: батчит только крошечные управляющие "
-                + "пакеты (<256 Б, ~2 мс), всё крупнее шлёт сразу. TCP_NODELAY ВКЛ. "
-                + "Если «турбо» быстр, но рвётся связь на больших файлах — попробуйте этот."),
+        COALESCE_LIGHT(9, "coalesce_light", "Soft coalescing",
+                "Minimum disguise, maximum speed: batches only tiny control "
+                + "packets (<256 B, ~2 ms), sends everything bigger immediately. TCP_NODELAY ON. "
+                + "If turbo is fast but big files drop the connection, try this one."),
 
         /** Pure bulk-batching like classic coalescing, but TCP_NODELAY ON so the
          *  kernel doesn't stack a second Nagle delay on top of the userspace buffer. */
-        COALESCE_NODELAY(10, "coalesce_nd", "Коалесинг без Nagle",
-                "Как обычный коалесинг (батчит всё до ~1400 Б / ~8 мс под bulk-загрузку), "
-                + "но TCP_NODELAY ВКЛ — ядро не добавляет вторую задержку поверх буфера. "
-                + "Маскировка как у обычного, но без двойной буферизации, которая душила медиа."),
+        COALESCE_NODELAY(10, "coalesce_nd", "Coalescing without Nagle",
+                "Like normal coalescing (batches everything up to ~1400 B / ~8 ms like a bulk download), "
+                + "but TCP_NODELAY ON — the kernel adds no second delay on top of the buffer. "
+                + "Same disguise as normal, without the double buffering that choked media."),
 
         // --- Time-released coalescing + first-packet split family -----------------
         // Why time-based: byte-latched modes (turbo/warmup) only go transparent
@@ -122,27 +122,27 @@ public final class WireShaper {
         /** Coalesce small writes only for the first ~1.5 s of the connection, then
          *  go fully transparent — fixes media DOWNLOADS that byte-latched modes
          *  can't (a download sends too little upstream to ever trip a byte latch). */
-        COALESCE_TIME(11, "coalesce_time", "Коалесинг старта по времени",
-                "Прячет мелко-пакетную сигнатуру первые ~1.5 с соединения (батчит записи "
-                + "<512 Б, крупные — сразу), потом полностью прозрачно. В отличие от «турбо/старта», "
-                + "release по ВРЕМЕНИ, а не по объёму — поэтому разблокирует и СКАЧИВАНИЕ медиа "
-                + "(при загрузке вверх уходит мало байт, и счётчик защёлки не срабатывал)."),
+        COALESCE_TIME(11, "coalesce_time", "Time-based start coalescing",
+                "Hides the small-packet signature for the first ~1.5 s of a connection (batches writes "
+                + "<512 B, large ones immediately), then fully transparent. Unlike turbo/start, "
+                + "it releases by TIME, not by volume — so it also unblocks media DOWNLOADS "
+                + "(downloads send few bytes upstream, so the volume latch never fired)."),
 
         /** Split only the very first outbound payload into a tiny first TCP
          *  segment + the rest, then pass through. TCP_NODELAY ON so each flush is
          *  its own real segment. The lightest, media-safe desync — the default. */
-        GBDPI_SPLIT(12, "split_first_pkt", "Сплит первого пакета",
-                "Самый первый исходящий пакет режется на крошечный первый TCP-сегмент (≈2 Б) + "
-                + "остаток — так маркер/сигнатура не лежит целиком в одном сегменте, а DPI без "
-                + "пересборки её не видит. Дальше поток без изменений (TCP_NODELAY ВКЛ). "
-                + "Лёгкий, не душит медиа — рекомендуется по умолчанию."),
+        GBDPI_SPLIT(12, "split_first_pkt", "Split the first packet",
+                "The very first outgoing packet is cut into a tiny first TCP segment (≈2 B) + "
+                + "the rest — so the marker/signature is never whole in one segment, and DPI without "
+                + "reassembly can't see it. The rest of the stream is unchanged (TCP_NODELAY ON). "
+                + "Light, doesn't choke media — recommended by default."),
 
         /** First-packet split AND a time-released coalescing window — handshake
          *  desync + bulk-look that frees media after ~1.5 s. */
-        GBDPI_SPLIT_TIME(13, "split_first_time", "Сплит первого пакета + коалесинг",
-                "Комбо: режет первый пакет И первые ~1.5 с маскирует обмен под bulk-загрузку, "
-                + "затем полный проброс. Шанс пройти DPI на старте и не задушить медиа после. "
-                + "Пробуйте, если простой сплит проходит, но хочется маскировки старта."),
+        GBDPI_SPLIT_TIME(13, "split_first_time", "Split the first packet + coalescing",
+                "Combo: cuts the first packet AND disguises the first ~1.5 s as a bulk download, "
+                + "then full pass-through. A chance to pass DPI at the start without choking media later. "
+                + "Try it if the simple split works but you want the start disguised too."),
 
         // --- «Сплит первого пакета»: усиленные вариации (оригинал не трогаем) -----
         // The plain split cuts ONE write at a tiny offset. These push the same idea
@@ -151,24 +151,24 @@ public final class WireShaper {
 
         /** Splits the first THREE outbound writes (handshake + first data), each
          *  into a tiny head + rest — a stronger desync than the single-write split. */
-        SPLIT_FIRST_X3(14, "split_first_x3", "Сплит первого пакета ×3",
-                "Как «Сплит первого пакета», но режет первые ТРИ исходящие записи "
-                + "(рукопожатие + начало данных), каждую на крошечный сегмент (≈3 Б) + остаток. "
-                + "Сильнее сбивает DPI на старте; дальше — полный проброс, медиа не страдает."),
+        SPLIT_FIRST_X3(14, "split_first_x3", "Split the first packet ×3",
+                "Like \"Split the first packet\", but cuts the first THREE outgoing writes "
+                + "(handshake + start of data), each into a tiny segment (≈3 B) + the rest. "
+                + "Confuses DPI more at the start; then full pass-through, media is unaffected."),
 
         /** Dices the first payload into many tiny segments over its opening bytes —
          *  no contiguous window for a non-reassembling DPI to match on. */
-        SPLIT_FIRST_MULTI(15, "split_first_multi", "Сплит первого пакета (мульти)",
-                "Первый пакет рубится на множество мелких сегментов (~8 Б) на первых ~64 байтах, "
-                + "затем остаток и весь дальнейший поток идут как есть. У DPI вообще нет цельного "
-                + "окна для матча в начале. Самый агрессивный сплит, медиа не душит."),
+        SPLIT_FIRST_MULTI(15, "split_first_multi", "Split the first packet (multi)",
+                "The first packet is chopped into many small segments (~8 B) over its first ~64 bytes, "
+                + "then the rest and the whole stream go as is. DPI has no complete "
+                + "window to match at the start. The most aggressive split; doesn't choke media."),
 
         /** First-packet split with a short pause between the two segments so even a
          *  stack that coalesces back-to-back writes still emits two packets. */
-        SPLIT_FIRST_GAP(16, "split_first_gap", "Сплит первого пакета с паузой",
-                "Режет первый пакет и делает короткую паузу (~6 мс) перед остатком — так даже "
-                + "сетевой стек, склеивающий соседние записи, гарантированно отправит ДВА пакета. "
-                + "Для DPI/прокси, где обычный сплит иногда «слипается» обратно в один сегмент.");
+        SPLIT_FIRST_GAP(16, "split_first_gap", "Split the first packet with a pause",
+                "Cuts the first packet and pauses briefly (~6 ms) before the rest — so even "
+                + "a network stack that merges adjacent writes will definitely send TWO packets. "
+                + "For DPI/proxies where a normal split sometimes merges back into one segment.");
 
         public final int code;
         public final String key;

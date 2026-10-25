@@ -63,6 +63,18 @@ public final class RelayStats {
         public volatile Runnable killer;
         /** True if this connection's upstream came from the pre-warm pool. */
         public volatile boolean fromPrewarm;
+        /** Real download-speed meter for this connection (upstream → Telegram). */
+        public final SpeedMeter meter = new SpeedMeter();
+        /** Wall-clock ms of the first Telegram → upstream byte (0 = none yet). */
+        public final AtomicLong firstUpAt = new AtomicLong();
+        /** Wall-clock ms of the last upstream → Telegram byte (0 = none yet). */
+        public final AtomicLong lastDownAt = new AtomicLong();
+        /** Telegram → upstream writes since the last downstream byte. */
+        public final AtomicInteger upWritesSinceDown = new AtomicInteger();
+        /** The upstream proxy entry (null for direct/bypass connections). */
+        public volatile io.autoconnector.engine.model.ProxyEntry upstreamEntry;
+        /** Set by the watchdog when it tears the connection down, for the log. */
+        public volatile String killReason;
 
         public LiveConn(int localPort, String upstream, long upstreamProxyId,
                         int dcId, boolean upstreamMtproto, int rttMs,

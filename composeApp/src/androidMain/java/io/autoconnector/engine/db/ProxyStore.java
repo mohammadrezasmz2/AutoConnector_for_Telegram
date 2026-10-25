@@ -28,7 +28,7 @@ import java.util.List;
 public class ProxyStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "autoconnector.db";
-    private static final int DB_VERSION = 13;
+    private static final int DB_VERSION = 14;
     /** Consecutive real-Telegram relay failures before a host is put on cooldown. */
     private static final int COOL_AFTER = 3;
 
@@ -53,6 +53,10 @@ public class ProxyStore extends SQLiteOpenHelper {
      *  still hold the aggregate / current-mode picture for backwards
      *  compatibility with screens that haven't been split yet. */
     private static final String PMS = "proxy_mode_stats";
+    /** Measured real-Telegram DOWNLOAD speed per (proxy, network mode). Kept in
+     *  its own table on purpose: recordProbe() rewrites PMS rows with
+     *  CONFLICT_REPLACE on every probe, which would wipe extra columns. */
+    private static final String SPD = "proxy_speed";
 
     /** A user-managed scan source. */
     public static final class Source {
@@ -164,7 +168,20 @@ public class ProxyStore extends SQLiteOpenHelper {
 
         createModeStatsTable(db);
         createAttemptLogTable(db);
+        createSpeedTable(db);
         seedDefaultSources(db);
+    }
+
+    private static void createSpeedTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + SPD + " ("
+                + "proxy_id INTEGER NOT NULL,"
+                + "mode TEXT NOT NULL,"
+                + "kbps REAL NOT NULL DEFAULT 0,"
+                + "samples INTEGER NOT NULL DEFAULT 0,"
+                + "stalls INTEGER NOT NULL DEFAULT 0,"
+                + "last_at INTEGER NOT NULL DEFAULT 0,"
+                + "last_stall_at INTEGER NOT NULL DEFAULT 0,"
+                + "PRIMARY KEY (proxy_id, mode))");
     }
 
     private static void createAttemptLogTable(SQLiteDatabase db) {
@@ -253,6 +270,10 @@ public class ProxyStore extends SQLiteOpenHelper {
                 db.execSQL("ALTER TABLE " + PMS + " ADD COLUMN consec_fail INTEGER NOT NULL DEFAULT 0");
                 db.execSQL("ALTER TABLE " + PMS + " ADD COLUMN cool_until INTEGER NOT NULL DEFAULT 0");
             }
+        }
+        if (oldV < 14) {
+            // Real-Telegram download-speed ranking (SpeedBoard).
+            createSpeedTable(db);
         }
     }
 
@@ -647,6 +668,8 @@ public class ProxyStore extends SQLiteOpenHelper {
         db.execSQL("DELETE FROM " + RL);
         db.execSQL("DELETE FROM " + AL);
         db.execSQL("DELETE FROM " + PMS);
+        db.execSQL("DELETE FROM " + SPD);
+        io.autoconnector.engine.relay.SpeedBoard.clearAll();
     }
 
     /**
@@ -663,6 +686,8 @@ public class ProxyStore extends SQLiteOpenHelper {
         db.execSQL("DELETE FROM " + RL);
         db.execSQL("DELETE FROM " + AL);
         db.execSQL("DELETE FROM " + PMS);
+        db.execSQL("DELETE FROM " + SPD);
+        io.autoconnector.engine.relay.SpeedBoard.clearAll();
     }
 
     /** {@code [ok, fail]} probe counts for one proxy over the last 24 hours. */
@@ -1312,6 +1337,8 @@ public class ProxyStore extends SQLiteOpenHelper {
                         + "failures=0,score=0,tg_connections=0,total_session_ms=0,"
                         + "bytes_relayed=0 WHERE mode=?",
                 new Object[]{mode.code});
+        getWritableDatabase().execSQL("DELETE FROM " + SPD + " WHERE mode=?", new Object[]{mode.code});
+        io.autoconnector.engine.relay.SpeedBoard.clearMode(mode);
     }
 
     /** Forgets every per-mode row for one network mode, so the hosts have no
@@ -1320,6 +1347,8 @@ public class ProxyStore extends SQLiteOpenHelper {
     public void forgetModeHosts(NetworkMode mode) {
         getWritableDatabase().execSQL("DELETE FROM " + PMS + " WHERE mode=?",
                 new Object[]{mode.code});
+        getWritableDatabase().execSQL("DELETE FROM " + SPD + " WHERE mode=?", new Object[]{mode.code});
+        io.autoconnector.engine.relay.SpeedBoard.clearMode(mode);
     }
 
     /** Replaces all per-mode rows of [to] with a copy of [from]'s rows, so the
@@ -1444,5 +1473,166 @@ public class ProxyStore extends SQLiteOpenHelper {
         s.totalSessionMs = c.getLong(c.getColumnIndexOrThrow("total_session_ms"));
         s.bytesRelayed = c.getLong(c.getColumnIndexOrThrow("bytes_relayed"));
         return s;
+    }
+
+    // === DOWNLOAD-SPEED API (SpeedBoard persistence) ========================
+
+    /** One persisted speed row, joined with its proxy. */
+    public static final class SpeedRow {
+        public ProxyEntry proxy;
+        public String mode;
+        public double kbps;
+        public int samples;
+        public int stalls;
+        public long lastAt;
+        public long lastStallAt;
+    }
+
+    /** Upserts one (proxy, mode) speed row. Called off the relay hot path. */
+    public void saveSpeed(long proxyId, String modeCode, double kbps, int samples,
+                          int stalls, long lastAt, long lastStallAt) {
+        ContentValues v = new ContentValues();
+        v.put("proxy_id", proxyId);
+        v.put("mode", modeCode);
+        v.put("kbps", kbps);
+        v.put("samples", samples);
+        v.put("stalls", stalls);
+        v.put("last_at", lastAt);
+        v.put("last_stall_at", lastStallAt);
+        getWritableDatabase().insertWithOnConflict(SPD, null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    /** Every persisted speed row whose proxy still exists (for SpeedBoard warm-up). */
+    public List<SpeedRow> loadSpeeds() {
+        List<SpeedRow> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT p.*, s.mode AS s_mode, s.kbps AS s_kbps, s.samples AS s_samples,"
+                        + " s.stalls AS s_stalls, s.last_at AS s_last_at, s.last_stall_at AS s_last_stall_at"
+                        + " FROM " + SPD + " s JOIN " + T + " p ON p.id=s.proxy_id", null);
+        try {
+            while (c.moveToNext()) {
+                SpeedRow r = new SpeedRow();
+                r.proxy = read(c);
+                r.mode = c.getString(c.getColumnIndexOrThrow("s_mode"));
+                r.kbps = c.getDouble(c.getColumnIndexOrThrow("s_kbps"));
+                r.samples = c.getInt(c.getColumnIndexOrThrow("s_samples"));
+                r.stalls = c.getInt(c.getColumnIndexOrThrow("s_stalls"));
+                r.lastAt = c.getLong(c.getColumnIndexOrThrow("s_last_at"));
+                r.lastStallAt = c.getLong(c.getColumnIndexOrThrow("s_last_stall_at"));
+                out.add(r);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /** Ids (out of {@code ids}) currently on relay/probe cooldown — ONE query for
+     *  a whole candidate list instead of one isCooled() call per host. */
+    public java.util.Set<Long> cooledAmong(java.util.Collection<Long> ids) {
+        java.util.Set<Long> out = new java.util.HashSet<>();
+        if (ids == null || ids.isEmpty()) return out;
+        StringBuilder sb = new StringBuilder();
+        for (Long id : ids) {
+            if (id == null) continue;
+            if (sb.length() > 0) sb.append(',');
+            sb.append(id.longValue());
+        }
+        if (sb.length() == 0) return out;
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT id FROM " + T + " WHERE id IN (" + sb + ") AND cool_until>?",
+                new String[]{String.valueOf(System.currentTimeMillis())});
+        try {
+            while (c.moveToNext()) out.add(c.getLong(0));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /** One catalog row: the proxy + its per-mode stats + primary subscription id,
+     *  fetched in a SINGLE query (the old per-row modeStatsOf/primarySourceId
+     *  lookups issued 100+ queries per refresh on the UI thread). */
+    public static final class CatalogRow {
+        public ProxyEntry proxy;
+        public boolean modeAlive;
+        public long modeLastCheck;
+        public double modeScore;
+        public int modeSuccesses;
+        public int modeFailures;
+        public int modeRtt;
+        public long modeBytes;
+        public long modeSessionMs;
+        public long coolUntil;
+        public long sourceId;
+    }
+
+    /** Catalog rows for one network mode (alive first, then by rating). The
+     *  caller re-orders them by measured speed. */
+    public List<CatalogRow> catalogRowsForMode(NetworkMode mode, int limit) {
+        List<CatalogRow> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT p.*, m.alive AS m_alive, m.last_check AS m_last_check, m.score AS m_score,"
+                        + " m.successes AS m_succ, m.failures AS m_fail, m.rtt_ms AS m_rtt,"
+                        + " m.bytes_relayed AS m_bytes, m.total_session_ms AS m_sess,"
+                        + " (SELECT sp.source_id FROM " + SP + " sp JOIN " + S + " s ON s.id=sp.source_id"
+                        + "   WHERE sp.proxy_id=p.id ORDER BY s.order_index ASC, s.id ASC LIMIT 1) AS src_id"
+                        + " FROM " + T + " p JOIN " + PMS + " m ON m.proxy_id=p.id AND m.mode=?"
+                        + " WHERE (m.last_check>0 OR m.alive=1)"
+                        + " ORDER BY m.alive DESC, m.score DESC, m.rtt_ms ASC LIMIT ?",
+                new String[]{mode.code, String.valueOf(limit)});
+        try {
+            while (c.moveToNext()) {
+                CatalogRow r = new CatalogRow();
+                r.proxy = read(c);
+                r.modeAlive = c.getInt(c.getColumnIndexOrThrow("m_alive")) != 0;
+                r.modeLastCheck = c.getLong(c.getColumnIndexOrThrow("m_last_check"));
+                r.modeScore = c.getDouble(c.getColumnIndexOrThrow("m_score"));
+                r.modeSuccesses = c.getInt(c.getColumnIndexOrThrow("m_succ"));
+                r.modeFailures = c.getInt(c.getColumnIndexOrThrow("m_fail"));
+                r.modeRtt = c.getInt(c.getColumnIndexOrThrow("m_rtt"));
+                r.modeBytes = c.getLong(c.getColumnIndexOrThrow("m_bytes"));
+                r.modeSessionMs = c.getLong(c.getColumnIndexOrThrow("m_sess"));
+                r.coolUntil = c.getLong(c.getColumnIndexOrThrow("cool_until"));
+                int si = c.getColumnIndexOrThrow("src_id");
+                r.sourceId = c.isNull(si) ? 0 : c.getLong(si);
+                out.add(r);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /** Global (mode-agnostic) catalog rows — used when the network mode is unknown. */
+    public List<CatalogRow> catalogRowsGlobal(int limit) {
+        List<CatalogRow> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT p.*,"
+                        + " (SELECT sp.source_id FROM " + SP + " sp JOIN " + S + " s ON s.id=sp.source_id"
+                        + "   WHERE sp.proxy_id=p.id ORDER BY s.order_index ASC, s.id ASC LIMIT 1) AS src_id"
+                        + " FROM " + T + " p ORDER BY p.alive DESC, p.score DESC, p.rtt_ms ASC LIMIT ?",
+                new String[]{String.valueOf(limit)});
+        try {
+            while (c.moveToNext()) {
+                CatalogRow r = new CatalogRow();
+                r.proxy = read(c);
+                r.modeAlive = r.proxy.alive && r.proxy.lastCheck > 0;
+                r.modeLastCheck = r.proxy.lastCheck;
+                r.modeScore = r.proxy.score;
+                r.modeSuccesses = r.proxy.successes;
+                r.modeFailures = r.proxy.failures;
+                r.modeRtt = r.proxy.rttMs;
+                r.modeBytes = r.proxy.bytesRelayed;
+                r.modeSessionMs = r.proxy.totalSessionMs;
+                r.coolUntil = c.getLong(c.getColumnIndexOrThrow("cool_until"));
+                int si = c.getColumnIndexOrThrow("src_id");
+                r.sourceId = c.isNull(si) ? 0 : c.getLong(si);
+                out.add(r);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
     }
 }

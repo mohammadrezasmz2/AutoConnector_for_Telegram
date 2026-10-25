@@ -390,6 +390,80 @@ interface Strings {
     val themeDark: String get() = "Dark"
     val drawGraphsLabel: String get() = "Draw graphs"
     val drawGraphsSub: String get() = "Live charts on the Connector and Scan tabs — turn off to save battery"
+
+    // --- Speed-first relay, smart auto-tune, catalog speed, per-setting (i) info.
+    // Defaulted to English so every locale compiles; translated where provided.
+    val catalogBestToTg: String get() = "Connect best in Telegram"
+    fun catalogCopyTop(n: Int): String = "Copy top $n"
+    fun catalogCopied(n: Int): String = "$n proxy links copied"
+    val catalogSortHint: String get() = "⚡ Sorted by real Telegram download speed, then by rating. Tap ✈ to open a proxy in Telegram."
+    val quickOpenTg: String get() = "Open in Telegram"
+    val speedField: String get() = "Download speed in Telegram"
+    val speedNotMeasured: String get() = "not measured yet"
+    fun speedSamples(n: Int, stalls: Int): String = "$n measurement(s) · $stalls stall(s)"
+    val coolingDownWord: String get() = "cooling down (failed recently)"
+
+    val speedSection: String get() = "Speed & smart mode"
+    val speedSectionHelp: String get() =
+        "AutoConnector measures how fast every proxy really downloads INSIDE Telegram " +
+        "(photos, videos, files going through the relay) — not just whether it answers a ping.\n\n" +
+        "• The relay sends Telegram through the hosts with the best measured download speed first.\n" +
+        "• A small share of connections tries hosts that were never measured, so new fast hosts are found.\n" +
+        "• Hosts that accept the connection but never deliver data, or whose download freezes, are cut " +
+        "within seconds and pushed down the list — Telegram reconnects through a better one.\n" +
+        "• Smart auto-tune adjusts the timeout, the number of parallel connects and the host breadth to " +
+        "what actually works on your network right now.\n\n" +
+        "Speeds are learned while you use Telegram: open a few photos/videos and the Catalog fills with real speeds."
+    val speedPriorityLabel: String get() = "Prefer the fastest hosts (real download speed)"
+    val speedPriorityInfo: String get() =
+        "ON: hosts are ranked by the download speed they actually delivered to your Telegram. The proven-fast " +
+        "ones are tried first with their own short race, so a host that merely answers quickly but downloads " +
+        "slowly can't take the connection.\n\nOFF: the old behaviour — hosts are picked by probe rating / at random."
+    val stallGuardLabel: String get() = "Cut dead and frozen connections"
+    val stallGuardInfo: String get() =
+        "Some public proxies accept the connection but never pass any data, or freeze in the middle of a download. " +
+        "Telegram then hangs on \"Connecting…\" / \"Updating…\" for minutes.\n\nWith this ON the relay closes such a " +
+        "connection after 12 s without any reply (or 20 s of a frozen download), marks the host as bad, and Telegram " +
+        "immediately reconnects through another host. A host you pinned yourself is never cut."
+    val autoTuneLabel: String get() = "Smart auto-tune"
+    val autoTuneInfo: String get() =
+        "Lets the app choose the connection settings for you, continuously, from live measurements:\n\n" +
+        "• Connect timeout = 2.5 × the time live hosts really need (so dead hosts are dropped fast).\n" +
+        "• Parallel connects: more when few hosts answer, fewer when most answer.\n" +
+        "• Host breadth & exploration: stick to the proven-fast hosts when there are enough, search widely when there aren't.\n\n" +
+        "While it is ON, the manual \"Connection\" sliders below are only used as a fallback. Your own values are kept."
+    fun autoTuneNow(s: String): String = "Now: $s"
+    val autoTuneWaiting: String get() = "Now: collecting measurements… (use Telegram for a minute)"
+    val autoTuneManaged: String get() = "Smart auto-tune is ON — these values are chosen automatically; your settings below are the fallback."
+    val tgFirstLabel: String get() = "Telegram first (slow scanning while Telegram downloads)"
+    val tgFirstInfo: String get() =
+        "Background scanning opens dozens of connections and downloads subscription lists. On a phone that competes " +
+        "with your Telegram download for the same bandwidth.\n\nWith this ON, while Telegram is downloading through " +
+        "the relay, probing drops to 4 parallel checks and routine subscription refreshes wait until the download is done."
+
+    // (i) explanations for individual settings
+    val infoDrawGraphs: String get() = "Draws the live charts on the Connector and Scan tabs. Turning it off keeps the numbers but saves battery and CPU."
+    val infoBasePeriod: String get() = "How often (in minutes) a background check pass of the proxy pool starts. Smaller = fresher list, more traffic and battery."
+    val infoBaseBatch: String get() = "How many proxies one check pass probes. Bigger = the whole pool is re-checked sooner."
+    val infoBaseThreads: String get() = "How many proxies are probed at the same time. More = faster passes but more load on the network (on a phone, 10–30 is reasonable)."
+    val infoMinRescan: String get() = "Never re-check the same proxy more often than this (minutes). Protects against pointless repeated probes."
+    val infoOnlyWifi: String get() = "Background exploration of new proxies runs only on Wi-Fi (saves mobile data). The relay itself always works."
+    val infoOnlyCharging: String get() = "Background exploration runs only while the phone is charging. The relay itself always works."
+    val infoSkipLowBattery: String get() = "Pause background exploration when the battery is at 15 % or lower."
+    val infoConnectEngine: String get() = "How the relay picks an upstream for each new Telegram connection. \"Parallel race\" dials several hosts at once and takes the first that answers — the fastest way to connect. Smart auto-tune always uses the race."
+    val infoRaceWidth: String get() = "How many hosts the parallel race dials at the same time for one Telegram connection. More = connects faster on bad networks, but opens more sockets."
+    val infoBreadth: String get() = "0 % = always use the best proven hosts; 100 % = spread over all live hosts (helps when the top hosts are being blocked)."
+    val infoConnTimeout: String get() = "How long to wait for ONE upstream (TCP + TLS + first reply) before giving up on it. Too short drops slow-but-working hosts; too long wastes time on dead ones. 3–6 s is typical."
+    val infoProxyEngine: String get() = "Low-level way the first packets are sent to the proxy. On Android keep \"Off\" unless nothing connects; \"coalescing\" modes connect more often but can break media loading."
+    val infoAntiDpi: String get() = "Tricks that disguise the connection from DPI filtering (browser-like TLS hello, packet splitting…). \"Auto\" tries them in turn and keeps what works."
+    val infoOnlyFakeTls: String get() = "Use only FakeTLS proxies (secret starting with \"ee\"). They look like normal HTTPS and survive filtering best, but the pool gets smaller."
+    val infoDpiRelay: String get() = "Apply the anti-DPI trick to the relay's real Telegram connections."
+    val infoDpiProbes: String get() = "Apply the anti-DPI trick to the background proxy checks too (so checks see what Telegram would see)."
+    val infoDpiDirect: String get() = "Apply packet splitting to the direct (no-proxy) mode used when a VPN is on."
+    val infoNetLog: String get() = "Writes a technical log of connection metadata (no message content) to a file for troubleshooting. Leave off normally."
+    val infoPrewarm: String get() = "Keeps a few connections to good hosts open in advance, so a new Telegram connection starts instantly instead of waiting for a handshake."
+    val scanThrottledTg: String get() = "⏸ Telegram is downloading — scan slowed down so Telegram gets the bandwidth"
+    val infoSubInterval: String get() = "How often (minutes) the proxy subscription lists are downloaded again on each network type."
 }
 
 /** Short display caption for a network-mode code, independent of locale. */

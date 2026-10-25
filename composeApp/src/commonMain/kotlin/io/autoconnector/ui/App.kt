@@ -77,11 +77,11 @@ import io.autoconnector.ui.theme.AppColors
 import io.autoconnector.ui.theme.AppTheme
 
 private enum class Tabs(val label: String, val icon: ImageVector) {
-    CONNECTOR("Коннектор", Icons.Filled.Bolt),
-    SCAN("Скан", Icons.Filled.Search),
-    CATALOG("Каталог", Icons.AutoMirrored.Filled.List),
-    LOGS("Логи", Icons.Filled.Terminal),
-    MORE("Ещё", Icons.Filled.Menu),
+    CONNECTOR("Connector", Icons.Filled.Bolt),
+    SCAN("Scan", Icons.Filled.Search),
+    CATALOG("Catalog", Icons.AutoMirrored.Filled.List),
+    LOGS("Logs", Icons.Filled.Terminal),
+    MORE("More", Icons.Filled.Menu),
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -288,6 +288,12 @@ fun App(engine: Engine) {
                             catalogForMode = { code -> engine.catalogForMode(code) },
                             onManageMode = { manageMode = it },
                             onClick = { detail = it },
+                            onQuickOpen = { item -> engine.tgLink(item.id)?.let(engine::openLink) },
+                            onCopyTop = { list ->
+                                val links = list.mapNotNull { engine.tgLink(it.id) }
+                                if (links.isNotEmpty()) engine.copyToClipboard(links.joinToString("\n"))
+                            },
+                            refreshKey = state.nowSec,
                         )
                     }
                     Tabs.LOGS -> logsItems(

@@ -260,7 +260,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
                     RelayServer.Listener { /* status lines already flow via RelayLog */ }, ctx)
                 m.start()
                 relayManager = m
-                RelayLog.emit("⏻ релей запущен, порты $a/$b")
+                RelayLog.emit("⏻ relay started, ports $a/$b")
             } catch (e: Throwable) {
                 appendLog("⚠ relay start error: ${e.message}")
                 relayManager = null
@@ -269,7 +269,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
             try { relayManager?.stop() } catch (_: Throwable) {}
             relayManager = null
             RelayStats.reset()
-            RelayLog.emit("⏻ релей остановлен, порты закрыты")
+            RelayLog.emit("⏻ relay stopped, ports closed")
         }
     }
 
@@ -324,6 +324,10 @@ class DesktopEngine(private val dataDir: File) : Engine {
             prewarmHoldSecs = p.prewarmHoldSecs(),
             themeMode = p.themeMode(),
             drawGraphs = p.drawGraphs(),
+            speedPriority = p.speedPriority(),
+            stallGuard = p.stallGuard(),
+            autoTune = p.autoTune(),
+            tgFirstScan = p.tgFirstScan(),
         )
     }
 
@@ -388,6 +392,11 @@ class DesktopEngine(private val dataDir: File) : Engine {
         p.setPrewarmHoldSecs(s.prewarmHoldSecs)
         p.setThemeMode(s.themeMode)
         p.setDrawGraphs(s.drawGraphs)
+        p.setSpeedPriority(s.speedPriority)
+        p.setStallGuard(s.stallGuard)
+        p.setAutoTune(s.autoTune)
+        p.setTgFirstScan(s.tgFirstScan)
+        io.autoconnector.engine.relay.RelayManager.applyTuningPrefs(ctx)
         NetLog.setEnabled(s.netLogEnabled)
         // Re-apply the manual mode override when the user changed it here, and
         // seed-scan the freshly selected mode if its pool is thin.
@@ -428,8 +437,8 @@ class DesktopEngine(private val dataDir: File) : Engine {
         ordered.add(auto); ordered.add(normal); ordered.addAll(rest)
         return ordered.map { m ->
             val label = when (m) {
-                auto -> "Авто-перебор DPI-трюков"
-                normal -> "Без DPI-трюков (обычный)"
+                auto -> "Auto-cycle anti-DPI tricks"
+                normal -> "No anti-DPI tricks (plain)"
                 else -> m.label
             }
             HandshakeOption(m.ordinal, label, m == auto || m == normal)
@@ -658,7 +667,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
             val url = _sources.value.firstOrNull { it.id == id }?.url ?: return@launch
             io.autoconnector.engine.core.ScanGate.setAborted(false)
             downloadingSince[id] = System.currentTimeMillis()
-            refreshSources()   // show "Загружаю…" at once
+            refreshSources()   // show "Loading…" at once
             appendLog("⤓ updating subscription: $url", LogCat.SUBS)
             try {
                 val scanner = PageScanner(store, PageScanner.Log { line -> appendLog(line, LogCat.SUBS) })
@@ -697,24 +706,24 @@ class DesktopEngine(private val dataDir: File) : Engine {
     override fun importBackupText(text: String, settings: Boolean, subs: Boolean, hosts: Boolean): String {
         return try {
             val r = io.autoconnector.engine.io.BackupIo.importInto(store, Prefs(ctx), text, settings, subs, hosts)
-            if (r.status == null) return "⚠ В тексте нет выбранных разделов"
+            if (r.status == null) return "⚠ The text contains none of the selected sections"
             if (r.hostsChanged) { refreshCatalog(); refreshSources() }
             else if (r.subsChanged) refreshSources()
             appendLog("⤒ import: ${r.status}", LogCat.OTHER)
-            "✓ Импортировано: ${r.status}"
+            "✓ Imported: ${r.status}"
         } catch (t: Throwable) {
-            "⚠ Ошибка импорта: ${t.message}"
+            "⚠ Import error: ${t.message}"
         }
     }
 
     override fun saveTextToFile(suggestedName: String, text: String): String {
         return try {
-            val f = chooseBackupFile(suggestedName, true) ?: return "Сохранение отменено"
+            val f = chooseBackupFile(suggestedName, true) ?: return "Save cancelled"
             f.writeText(text)
             appendLog("⤓ saved to file → ${f.absolutePath}", LogCat.OTHER)
-            "✓ Сохранено: ${f.name}"
+            "✓ Saved: ${f.name}"
         } catch (t: Throwable) {
-            "⚠ Ошибка сохранения: ${t.message}"
+            "⚠ Save error: ${t.message}"
         }
     }
 
@@ -736,7 +745,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
         return try {
             val fd = java.awt.FileDialog(
                 null as java.awt.Frame?,
-                if (save) "Сохранить бэкап AutoConnector" else "Открыть бэкап AutoConnector",
+                if (save) "Save AutoConnector backup" else "Open AutoConnector backup",
                 if (save) java.awt.FileDialog.SAVE else java.awt.FileDialog.LOAD,
             )
             if (save) fd.file = defaultName
@@ -1443,27 +1452,27 @@ class DesktopEngine(private val dataDir: File) : Engine {
         when {
             conns.isEmpty() && pending == 0 -> {
                 connState = ConnState.OFFLINE
-                statusText = "Telegram не подключён"
+                statusText = "Telegram not connected"
                 val last = p.lastTelegramConnectMs()
-                statusSub = if (last > 0) "был ${Durations.human((now - last) / 1000)} назад" else "ждём подключения"
+                statusSub = if (last > 0) "last seen ${Durations.human((now - last) / 1000)} ago" else "waiting for connection"
             }
             conns.isNotEmpty() && (tunnelWorks || recentMs <= 20_000) -> {
                 connState = ConnState.CONNECTED
-                statusText = "Telegram подключён"
-                statusSub = "идёт ${Durations.human(sessionSec)} · ${TrafficMeter.human(sessionBytes)}"
+                statusText = "Telegram connected"
+                statusSub = "running ${Durations.human(sessionSec)} · ${TrafficMeter.human(sessionBytes)}"
             }
             else -> {
                 connState = ConnState.CONNECTING
-                statusText = "Идёт коннект…"
-                statusSub = if (sessionSec > 0) "${Durations.human(sessionSec)} · рукопожатие"
-                    else "рукопожатие, сокетов ${conns.size + pending}"
+                statusText = "Connecting…"
+                statusSub = if (sessionSec > 0) "${Durations.human(sessionSec)} · handshake"
+                    else "handshake, sockets ${conns.size + pending}"
             }
         }
 
         val latency = if (conns.isEmpty()) "—" else {
             var tot = 0; var n = 0
             for (c in conns) if (c.rttMs > 0) { tot += c.rttMs; n++ }
-            if (n > 0) "~${tot / n} мс" else "—"
+            if (n > 0) "~${tot / n} ms" else "—"
         }
 
         val sessions = conns.map { c ->
@@ -1519,9 +1528,9 @@ class DesktopEngine(private val dataDir: File) : Engine {
         val bLastB = p.lastTelegramConnectPortBMs() > 0
         val setupNeeded = !(aLastA || bLastB)
         val cta = when {
-            !aLastA && !bLastB -> "⚠ Релей ещё не настроен в Telegram"
-            !aLastA -> "⚠ Порт ${p.relayPortA()} ещё не виден Telegram"
-            !bLastB -> "⚠ Порт ${p.relayPortB()} ещё не виден Telegram"
+            !aLastA && !bLastB -> "⚠ The relay is not set up in Telegram yet"
+            !aLastA -> "⚠ Telegram has not used port ${p.relayPortA()} yet"
+            !bLastB -> "⚠ Telegram has not used port ${p.relayPortB()} yet"
             else -> null
         }
 
@@ -1584,6 +1593,8 @@ class DesktopEngine(private val dataDir: File) : Engine {
             testHostId = io.autoconnector.engine.check.HostTester.testingId(),
             testRunning = io.autoconnector.engine.check.HostTester.running(),
             testSummary = io.autoconnector.engine.check.HostTester.summary(),
+            autoTuneSummary = io.autoconnector.engine.relay.AutoTuner.summary(),
+            tgBusy = io.autoconnector.engine.core.TrafficGovernor.busy(),
             socketsTgToConnector = maxOf(0, conns.size + pending),
             socketsConnectorToProxy = conns.size,
             currentProxy = currentProxy,
@@ -1670,7 +1681,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
         val dpi = if (c.upstreamMtproto) {
             val user = HandshakeMode.fromOrdinal(p.handshakeMode())
             if (user == HandshakeMode.AUTO_RANDOM)
-                "Авто" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
+                "Auto" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
             else user.label
         } else "—"
         val obf = obfEngineLabel(entry, c.upstreamMtproto, c.fakeTlsSni?.isNotEmpty() == true)
@@ -1682,14 +1693,14 @@ class DesktopEngine(private val dataDir: File) : Engine {
      *  bare MTProto, or none for SOCKS5. */
     private fun obfEngineLabel(entry: ProxyEntry?, mtproto: Boolean, hasTls: Boolean): String {
         if (entry != null) {
-            if (entry.type != ProxyType.MTPROTO) return "нет (SOCKS5)"
+            if (entry.type != ProxyType.MTPROTO) return "none (SOCKS5)"
             return when {
                 entry.isFakeTls -> "FakeTLS (ee)"
                 entry.isDdSecret -> "Secure (dd)"
-                else -> "MTProto (обычный)"
+                else -> "MTProto (plain)"
             }
         }
-        if (!mtproto) return "нет (SOCKS5)"
+        if (!mtproto) return "none (SOCKS5)"
         return if (hasTls) "FakeTLS (ee)" else "MTProto"
     }
 
@@ -1700,7 +1711,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
         val dpi = if (entry.type == ProxyType.MTPROTO) {
             val user = HandshakeMode.fromOrdinal(p.handshakeMode())
             if (user == HandshakeMode.AUTO_RANDOM)
-                "Авто" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
+                "Auto" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
             else user.label
         } else "—"
         val obf = obfEngineLabel(entry, entry.type == ProxyType.MTPROTO, tls != null)
@@ -1710,13 +1721,13 @@ class DesktopEngine(private val dataDir: File) : Engine {
     private fun modeBadge(p: Prefs): String {
         val net = NetworkMonitor.currentMode()
         if (p.shouldBypassProxies())
-            return "Сеть: ${net.label} · прямой выход" + (if (p.dpiApplyDirect()) " · анти-DPI" else "")
+            return "Network: ${net.label} · direct" + (if (p.dpiApplyDirect()) " · anti-DPI" else "")
         val user = HandshakeMode.fromOrdinal(p.handshakeMode())
         val dpi = if (user == HandshakeMode.AUTO_RANDOM) {
             val last = HandshakeStats.lastUsed()
-            "Авто" + (if (last != null) " → ${last.label}" else "")
+            "Auto" + (if (last != null) " → ${last.label}" else "")
         } else user.label
-        return "Сеть: ${net.label} · Анти-DPI: $dpi"
+        return "Network: ${net.label} · Anti-DPI: $dpi"
     }
 
     // === catalog / sources refresh ======================================
@@ -1911,7 +1922,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
         }
     }
 
-    private fun rate(bps: Long) = "${TrafficMeter.human(bps)}/с"
+    private fun rate(bps: Long) = "${TrafficMeter.human(bps)}/s"
 
     companion object {
         // Single dotted-semver version line for the desktop build (matches the

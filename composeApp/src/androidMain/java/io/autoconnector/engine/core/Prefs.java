@@ -285,11 +285,11 @@ public class Prefs {
 
     public enum ProxyMode {
         /** Always go through MTProto upstream. */
-        USE_PROXIES("use", "Использовать прокси"),
+        USE_PROXIES("use", "Use proxies"),
         /** Never use proxies — relay acts as a thin SOCKS5→Telegram-DC tunnel. */
-        DISABLED("disabled", "Отключить (прямой выход)"),
+        DISABLED("disabled", "Disable (direct)"),
         /** Use proxies normally, but skip them while VPN is active. Default. */
-        DISABLED_ON_VPN("vpn_only", "Отключать при VPN");
+        DISABLED_ON_VPN("vpn_only", "Disable while a VPN is on");
 
         public final String code;
         public final String label;
@@ -538,6 +538,24 @@ public class Prefs {
         sp.edit().putInt("relay_connect_timeout_ms", clampConnTimeout(ms)).apply();
     }
 
+    // --- Speed-first relay (download-speed ranking, stall guard, auto-tune) -----
+
+    /** Rank upstreams by measured real Telegram download speed (default ON). */
+    public boolean speedPriority() { return sp.getBoolean("speed_priority", true); }
+    public void setSpeedPriority(boolean v) { sp.edit().putBoolean("speed_priority", v).apply(); }
+
+    /** Cut connections whose upstream never answers / whose download stalls. */
+    public boolean stallGuard() { return sp.getBoolean("stall_guard", true); }
+    public void setStallGuard(boolean v) { sp.edit().putBoolean("stall_guard", v).apply(); }
+
+    /** Smart auto-tune of timeout / race width / breadth / exploration. */
+    public boolean autoTune() { return sp.getBoolean("auto_tune", true); }
+    public void setAutoTune(boolean v) { sp.edit().putBoolean("auto_tune", v).apply(); }
+
+    /** "Telegram first": throttle scanning while Telegram is downloading. */
+    public boolean tgFirstScan() { return sp.getBoolean("tg_first_scan", true); }
+    public void setTgFirstScan(boolean v) { sp.edit().putBoolean("tg_first_scan", v).apply(); }
+
     // --- Experimental: pre-warm standby upstream sockets (default OFF) --------
     // Hold a small pool of already-connected upstream sockets so a Telegram
     // connect can skip the (expensive) connect/handshake. See PrewarmPool.
@@ -683,6 +701,16 @@ public class Prefs {
               .putInt("relay_breadth", 50)
               .putInt("handshake_mode", io.autoconnector.engine.net.HandshakeMode.AUTO_RANDOM.ordinal())
               .putInt("defaults_v", 12).apply();
+        }
+        if (v < 13) {
+            // v13: speed-first relay — rank by real download speed, cut dead /
+            // stalled upstreams, smart auto-tune, scan yields to Telegram.
+            sp.edit()
+              .putBoolean("speed_priority", true)
+              .putBoolean("stall_guard", true)
+              .putBoolean("auto_tune", true)
+              .putBoolean("tg_first_scan", true)
+              .putInt("defaults_v", 13).apply();
         }
     }
 }

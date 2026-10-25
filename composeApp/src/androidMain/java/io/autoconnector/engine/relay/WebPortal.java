@@ -63,7 +63,7 @@ public final class WebPortal {
      */
     public static void serveTlsHint(OutputStream out, String httpUrl) throws IOException {
         String safeUrl = httpUrl == null ? "" : httpUrl;
-        String text = "Откройте " + safeUrl + " (без https) — страница доступна по обычному HTTP.\n";
+        String text = "Open " + safeUrl + " (without https) — the page is served over plain HTTP.\n";
         byte[] body = text.getBytes(StandardCharsets.UTF_8);
         StringBuilder head = new StringBuilder();
         head.append("HTTP/1.1 200 OK\r\n");
@@ -128,87 +128,87 @@ public final class WebPortal {
         b.append("<h1>").append(esc(APP_NAME)).append("</h1>\n");
         b.append("<div class=\"links\">\n");
         b.append("<a class=\"btn\" href=\"").append(escAttr(GITHUB_URL)).append("\" target=\"_blank\">GitHub</a>\n");
-        b.append("<a class=\"btn\" href=\"").append(escAttr(CHAT_URL)).append("\" target=\"_blank\">Telegram-чат</a>\n");
+        b.append("<a class=\"btn\" href=\"").append(escAttr(CHAT_URL)).append("\" target=\"_blank\">Telegram chat</a>\n");
         b.append("</div>\n");
         b.append("</header>\n");
 
         // ---------- Intro ----------
         b.append("<section class=\"intro\">\n");
-        b.append("<p>Эта страница открылась, потому что на одном из устройств в вашей сети включена галочка "
-                + "«Раздача по локальной сети» в приложении <b>").append(esc(APP_NAME)).append("</b>. "
-                + "Чтобы её закрыть — выключите эту галочку в приложении (Ещё → Раздача по локальной сети).</p>\n");
-        b.append("<p class=\"warn\">Страница и прокси доступны <b>ВСЕМ</b> устройствам в этой локальной сети — "
-                + "дома, на работе, в общественном Wi-Fi. Будьте осторожны: включайте раздачу только в сетях, "
-                + "которым доверяете; в публичных сетях ею могут воспользоваться посторонние.</p>\n");
-        b.append("<div class=\"info\"><b>Важно:</b> никакие режимы работы ").append(esc(APP_NAME))
-         .append(" ни при каких обстоятельствах не позволяют никому — ни вам, ни гостям — перехватить или "
-                + "расшифровать вашу переписку. Прокси лишь передаёт уже зашифрованный трафик Telegram и не "
-                + "может его прочитать; шифрование гарантирует сам Telegram.</div>\n");
+        b.append("<p>This page opened because a device on your network has the "
+                + "\"LAN sharing\" option enabled in the app <b>").append(esc(APP_NAME)).append("</b>. "
+                + "To close it, turn that option off in the app (More → LAN sharing).</p>\n");
+        b.append("<p class=\"warn\">The page and the proxy are available to <b>ALL</b> devices on this local network — "
+                + "at home, at work, on public Wi-Fi. Be careful: enable sharing only on networks "
+                + "you trust; on public networks strangers can use it.</p>\n");
+        b.append("<div class=\"info\"><b>Important:</b> no operating mode of ").append(esc(APP_NAME))
+         .append(" ever lets anyone — you or your guests — intercept or "
+                + "decrypt your messages. The proxy only forwards Telegram's already-encrypted traffic and "
+                + "cannot read it; the encryption is guaranteed by Telegram itself.</div>\n");
         b.append("</section>\n");
 
         // ---------- Вариант 1 — установить приложение ----------
         b.append("<section class=\"variant\">\n");
         b.append("<div class=\"card\">\n");
-        b.append("<h2>Вариант 1 · Установить приложение</h2>\n");
-        b.append("<p>Скачайте <b>").append(esc(APP_NAME)).append("</b> и поставьте на своё устройство — "
-                + "оно само найдёт рабочие прокси.</p>\n");
+        b.append("<h2>Option 1 · Install the app</h2>\n");
+        b.append("<p>Download <b>").append(esc(APP_NAME)).append("</b> and install it on your device — "
+                + "it finds working proxies by itself.</p>\n");
         b.append("<div class=\"btns\">\n");
         b.append("<a class=\"btn primary\" href=\"").append(escAttr(GITHUB_URL))
-         .append("\" target=\"_blank\">Открыть на GitHub</a>\n");
+         .append("\" target=\"_blank\">Open on GitHub</a>\n");
         b.append("</div>\n");
-        b.append("<p class=\"hint\">или загуглите «").append(esc(APP_NAME)).append("».</p>\n");
+        b.append("<p class=\"hint\">or search for \"").append(esc(APP_NAME)).append("».</p>\n");
         b.append("</div>\n");
         b.append("</section>\n");
 
         // ---------- Вариант 2 — настроить порты в Telegram ----------
         b.append("<section class=\"variant\">\n");
         b.append("<div class=\"card\">\n");
-        b.append("<h2>Вариант 2 · Настроить порты в Telegram</h2>\n");
+        b.append("<h2>Option 2 · Set up the ports in Telegram</h2>\n");
         if (ip == null) {
-            b.append("<p class=\"hint\">У этого устройства нет адреса в локальной сети — подключите его к Wi-Fi.</p>\n");
+            b.append("<p class=\"hint\">This device has no local network address — connect it to Wi-Fi.</p>\n");
         } else {
             String urlA = "tg://socks?server=" + ip + "&port=" + portA;
             String urlB = "tg://socks?server=" + ip + "&port=" + portB;
 
             // №1 — кнопками
             b.append("<div class=\"step\">\n");
-            b.append("<div class=\"steptitle\">№1 — кнопками</div>\n");
+            b.append("<div class=\"steptitle\">#1 — with buttons</div>\n");
             b.append("<div class=\"btns\">\n");
-            b.append("<a class=\"btn primary\" href=\"").append(escAttr(urlA)).append("\">Прокси ")
+            b.append("<a class=\"btn primary\" href=\"").append(escAttr(urlA)).append("\">Proxy ")
              .append(portA).append("</a>\n");
-            b.append("<a class=\"btn primary\" href=\"").append(escAttr(urlB)).append("\">Прокси ")
+            b.append("<a class=\"btn primary\" href=\"").append(escAttr(urlB)).append("\">Proxy ")
              .append(portB).append("</a>\n");
             b.append("</div>\n");
-            b.append("<p class=\"hint\">Нажатие откроет Telegram и предложит включить SOCKS-прокси.</p>\n");
+            b.append("<p class=\"hint\">Tapping opens Telegram and offers to enable the SOCKS proxy.</p>\n");
             b.append("</div>\n");
 
             // №2 — ссылками
             String bothLines = urlA + "\n" + urlB;
             b.append("<div class=\"step\">\n");
-            b.append("<div class=\"steptitle\">№2 — ссылками</div>\n");
+            b.append("<div class=\"steptitle\">#2 — with links</div>\n");
             b.append("<div class=\"copybox\">\n");
             b.append("<textarea class=\"copytext\" readonly rows=\"2\" onclick=\"this.select()\">")
              .append(esc(bothLines)).append("</textarea>\n");
             b.append("<button class=\"btn copy\" type=\"button\" data-url=\"").append(escAttr(bothLines))
-             .append("\">Копировать</button>\n");
+             .append("\">Copy</button>\n");
             b.append("</div>\n");
-            b.append("<p class=\"hint\">Скопируйте и отправьте себе в «Избранное» в Telegram, затем откройте.</p>\n");
+            b.append("<p class=\"hint\">Copy and send them to your Saved Messages in Telegram, then open them.</p>\n");
             b.append("</div>\n");
 
             // №3 — вручную
             b.append("<div class=\"step\">\n");
-            b.append("<div class=\"steptitle\">№3 — вручную</div>\n");
-            b.append("<p>Добавьте в Telegram прокси <b>SOCKS5</b> вручную: Сервер <b>").append(esc(ip))
-             .append("</b>, Порт <b>").append(portA).append("</b> или <b>").append(portB)
-             .append("</b>, без логина/пароля.</p>\n");
+            b.append("<div class=\"steptitle\">#3 — manually</div>\n");
+            b.append("<p>Add a <b>SOCKS5</b> proxy to Telegram manually: server <b>").append(esc(ip))
+             .append("</b>, port <b>").append(portA).append("</b> or <b>").append(portB)
+             .append("</b>, no username/password.</p>\n");
             b.append("<div class=\"chips\">\n");
-            b.append(chip("Сервер " + ip, ip));
-            b.append(chip("Порт " + portA, String.valueOf(portA)));
-            b.append(chip("Порт " + portB, String.valueOf(portB)));
+            b.append(chip("Server " + ip, ip));
+            b.append(chip("Port " + portA, String.valueOf(portA)));
+            b.append(chip("Port " + portB, String.valueOf(portB)));
             b.append("</div>\n");
             b.append("</div>\n");
 
-            b.append("<p class=\"hint\">Дальше: в Telegram включите автопереключение прокси.</p>\n");
+            b.append("<p class=\"hint\">Then turn on automatic proxy switching in Telegram.</p>\n");
         }
         b.append("</div>\n");
         b.append("</section>\n");
@@ -216,13 +216,13 @@ public final class WebPortal {
         // ---------- Вариант 3 — готовые прокси ----------
         b.append("<section class=\"variant\">\n");
         b.append("<div class=\"card\">\n");
-        b.append("<h2>Вариант 3 · Готовые прокси</h2>\n");
-        b.append("<p class=\"hint\">Нажимайте на любую синюю кнопку, добавляйте в Telegram прокси, потом "
-                + "возвращайтесь на эту страницу и снова нажимайте синие кнопки.</p>\n");
-        b.append("<p>Скопируйте один или несколько прокси себе — или просто нажмите «Открыть», "
-                + "и появится Telegram.</p>\n");
+        b.append("<h2>Option 3 · Ready-made proxies</h2>\n");
+        b.append("<p class=\"hint\">Tap any blue button, add the proxy in Telegram, then "
+                + "come back to this page and tap the blue buttons again.</p>\n");
+        b.append("<p>Copy one or more proxies — or just tap \"Open\" "
+                + "and Telegram will appear.</p>\n");
         if (hosts == null || hosts.isEmpty()) {
-            b.append("<p class=\"hint\">Пока нет проверенных хостов — зайдите позже.</p>\n");
+            b.append("<p class=\"hint\">No verified hosts yet — come back later.</p>\n");
         } else {
             for (Link l : hosts) {
                 if (l == null) continue;
@@ -236,8 +236,8 @@ public final class WebPortal {
                  .append(escAttr(l.url)).append("\" data-url=\"").append(escAttr(l.url))
                  .append("\" onclick=\"this.select()\">\n");
                 b.append("<a class=\"ico open\" href=\"").append(escAttr(l.url))
-                 .append("\" title=\"Открыть\" aria-label=\"Открыть\">↗</a>\n");
-                b.append("<button class=\"ico copy\" type=\"button\" title=\"Копировать\" aria-label=\"Копировать\" data-url=\"")
+                 .append("\" title=\"Open\" aria-label=\"Open\">↗</a>\n");
+                b.append("<button class=\"ico copy\" type=\"button\" title=\"Copy\" aria-label=\"Copy\" data-url=\"")
                  .append(escAttr(l.url)).append("\">⧉</button>\n");
                 b.append("</div>\n");
                 b.append("</div>\n");
@@ -334,7 +334,7 @@ public final class WebPortal {
         "function flash(btn){\n" +
         "  var old=btn.getAttribute('data-old');\n" +
         "  if(old===null){old=btn.textContent;btn.setAttribute('data-old',old);}\n" +
-        "  btn.textContent=(btn.classList.contains('ico')||btn.classList.contains('chip'))?'✓':'Скопировано ✓';\n" +
+        "  btn.textContent=(btn.classList.contains('ico')||btn.classList.contains('chip'))?'✓':'Copied ✓';\n" +
         "  setTimeout(function(){btn.textContent=old;},1500);\n" +
         "}\n" +
         "function doCopy(btn){\n" +

@@ -49,6 +49,8 @@ public final class RelayManager {
 
     /** Experimental standby-socket pool (self-gates on Prefs.prewarmEnabled). */
     private volatile PrewarmPool prewarm;
+    /** Dead-upstream / stalled-download supervisor + governor/auto-tune tick. */
+    private volatile StallWatchdog watchdog;
     public PrewarmPool prewarm() { return prewarm; }
 
     public RelayManager(int portA, int portB, ProxyStore store,
@@ -82,9 +84,32 @@ public final class RelayManager {
             else upstreamB.set(top.get(0));
         }
         INSTANCE = this;
+        SpeedBoard.init(store);
+        applyTuningPrefs(appContext);
         prewarm = new PrewarmPool(store, appContext);
         prewarm.start();
+        watchdog = new StallWatchdog(this, store);
+        watchdog.start();
     }
+
+    /** Pushes the speed/auto-tune feature switches from Prefs into the engine. */
+    public static void applyTuningPrefs(Context ctx) {
+        try {
+            io.autoconnector.engine.core.Prefs p = new io.autoconnector.engine.core.Prefs(ctx);
+            AutoTuner.setEnabled(p.autoTune());
+            StallWatchdog.setGuardEnabled(p.stallGuard());
+            io.autoconnector.engine.core.TrafficGovernor.setEnabled(p.tgFirstScan());
+        } catch (Throwable ignored) {}
+    }
+
+    /** True if {@code proxyId} is the user-pinned upstream. */
+    public boolean isPinned(long proxyId) {
+        ProxyEntry p = pinned;
+        return p != null && p.id == proxyId;
+    }
+
+    /** The user-pinned upstream entry, or null. */
+    public ProxyEntry pinnedEntry() { return pinned; }
 
     /** Re-creates and restarts the two listeners so they pick up a changed bind
      *  address (loopback ↔ 0.0.0.0) when "share over LAN" is toggled. In-flight
@@ -111,6 +136,7 @@ public final class RelayManager {
 
     public void stop() {
         if (INSTANCE == this) INSTANCE = null;
+        if (watchdog != null) { watchdog.stop(); watchdog = null; }
         if (prewarm != null) { prewarm.stop(); prewarm = null; }
         if (serverA != null) serverA.stop();
         if (serverB != null) serverB.stop();
@@ -169,8 +195,8 @@ public final class RelayManager {
             ProxyEntry bad = ref(prev).getAndSet(null);
             if (bad != null) {
                 penalize(bad);
-                String msg = "⟳ Telegram переключился с порта " + prev + " на " + port
-                        + " — апстрим " + bad.host + ":" + bad.port + " снижен в рейтинге";
+                String msg = "⟳ Telegram switched from port " + prev + " to " + port
+                        + " — upstream " + bad.host + ":" + bad.port + " demoted in the rating";
                 listener.event(msg);
                 RelayLog.emit(msg);
             }

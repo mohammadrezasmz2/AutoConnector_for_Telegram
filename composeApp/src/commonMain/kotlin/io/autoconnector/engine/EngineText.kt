@@ -14,11 +14,11 @@ package io.autoconnector.engine
 internal fun classify(line: String): LogLevel {
     val c = line.firstOrNull() ?: ' '
     return when (c) {
-        '✓', '●', '≈', '→' -> LogLevel.OK
+        '✓', '●', '≈', '→', '⚡' -> LogLevel.OK
         '✗', '⨂' -> LogLevel.FAIL
         '↪' -> LogLevel.ROUTE
         '·' -> LogLevel.MUTED
-        '⟳', '⚠', '⏸' -> LogLevel.WARN
+        '⟳', '⚠', '⏸', '✂' -> LogLevel.WARN
         else -> LogLevel.INFO
     }
 }

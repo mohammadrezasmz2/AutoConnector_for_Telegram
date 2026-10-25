@@ -71,13 +71,21 @@ data class CatalogItem(
     val failures: Int = 0,
     val tgConnections: Long = 0,
     val bytesRelayed: Long = 0,
-    val bytesRelayedHuman: String = "0 Б",
+    val bytesRelayedHuman: String = "0 B",
     val sessionTotalHuman: String = "—",
     val rttMs: Int = -1,
     val secret: String? = null,
     val tlsDomain: String? = null,
     val port: Int = 0,
     val lastErrorShort: String? = null,
+    // Real Telegram download speed through this host on the shown network mode
+    // (KB/s, -1 = not measured yet), its formatted form, how many sessions were
+    // measured, how many times it stalled, and whether it is on failure cooldown.
+    val speedKbps: Int = -1,
+    val speedHuman: String = "",
+    val speedSamples: Int = 0,
+    val stalls: Int = 0,
+    val coolingDown: Boolean = false,
 )
 
 data class SourceItem(
@@ -225,6 +233,14 @@ data class EngineSettings(
     // Draw the live sparkline charts on the Connector/Scan tabs. Off = the numeric
     // readings stay but the per-frame canvas animation is skipped (saves battery).
     val drawGraphs: Boolean = true,
+    // Speed-first relay: rank upstreams by real Telegram download speed.
+    val speedPriority: Boolean = true,
+    // Cut connections whose upstream never answers / whose download freezes.
+    val stallGuard: Boolean = true,
+    // Smart auto-tune of timeout / race width / breadth / exploration.
+    val autoTune: Boolean = true,
+    // «Telegram first»: slow scanning down while Telegram is downloading.
+    val tgFirstScan: Boolean = true,
 )
 
 /** One past attempt against a host, for the detail card's history list. */
@@ -297,7 +313,7 @@ data class EngineState(
     val portB: Int = 0,
 
     val connState: ConnState = ConnState.OFFLINE,
-    val statusText: String = "Telegram не подключён",
+    val statusText: String = "Telegram not connected",
     val statusSub: String = "",
     val modeBadge: String = "",
     // Current detected network for the Connector header (Wi-Fi / LTE / VPN /
@@ -345,11 +361,11 @@ data class EngineState(
     val subsOkHour: Int = 0,
     val subsFailMin: Int = 0,
     val subsFailHour: Int = 0,
-    val scanBytesMin: String = "0 Б",
-    val scanBytesHour: String = "0 Б",
+    val scanBytesMin: String = "0 B",
+    val scanBytesHour: String = "0 B",
     // Subscription-download traffic totals (separate from host-scan traffic).
-    val subBytesMin: String = "0 Б",
-    val subBytesHour: String = "0 Б",
+    val subBytesMin: String = "0 B",
+    val subBytesHour: String = "0 B",
     // Telegram session tallies (all-time).
     val tgSessAll: Long = 0,
     val tgSessOk: Long = 0,
@@ -430,6 +446,10 @@ data class EngineState(
     val testHostId: Long = 0,
     val testRunning: Boolean = false,
     val testSummary: String = "",
+    // Smart auto-tune: one-line summary of what it currently chose ("" = off / no data).
+    val autoTuneSummary: String = "",
+    // True while Telegram is downloading through the relay (scan is throttled).
+    val tgBusy: Boolean = false,
 ) {
     // Identity-based equals is fine and avoids the array-equals boilerplate;
     // every tick produces a fresh instance anyway.

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -98,6 +99,11 @@ fun CatalogContent(
     catalogForMode: (String) -> List<CatalogItem>,
     onManageMode: (String) -> Unit,
     onClick: (CatalogItem) -> Unit,
+    onQuickOpen: (CatalogItem) -> Unit = {},
+    onCopyTop: (List<CatalogItem>) -> Unit = {},
+    // Changes every engine tick so the (cached, engine-side re-ranked) list is
+    // re-read and the order updates live.
+    refreshKey: Long = 0L,
 ) {
     val t = LocalStrings.current
     val initial = if (activeMode in CATALOG_MODES) activeMode else "vpn"
@@ -117,7 +123,7 @@ fun CatalogContent(
     // Always pull per-mode data so a per-mode reset is reflected even on the active
     // tab (the global aggregate [items] would mask it). [items] is kept in the
     // signature only to avoid breaking the caller.
-    val shown = catalogForMode(selected)
+    val shown = remember(selected, refreshKey) { catalogForMode(selected) }
 
     // A plain Column (not LazyColumn): this composable is hosted inside the page's
     // outer LazyColumn item, and a nested vertical LazyColumn would crash. The
@@ -171,6 +177,43 @@ fun CatalogContent(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
             )
         }
+        if (shown.isNotEmpty()) {
+            // Quick actions: send the #1 host straight to Telegram's "add proxy"
+            // dialog, or copy the top-10 links to paste anywhere.
+            val best = shown.firstOrNull { it.alive && !it.coolingDown }
+            val topAlive = shown.filter { it.alive && !it.coolingDown }.take(10)
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Button(
+                    onClick = { best?.let(onQuickOpen) },
+                    enabled = best != null,
+                    modifier = Modifier.weight(1.4f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                ) {
+                    Icon(Icons.Filled.Send, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(t.catalogBestToTg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                OutlinedButton(
+                    onClick = { onCopyTop(topAlive) },
+                    enabled = topAlive.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                ) {
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(t.catalogCopyTop(topAlive.size), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Text(
+                t.catalogSortHint,
+                color = AppColors.onSurfaceMuted,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 12.dp),
+            )
+        }
         if (shown.isEmpty()) {
             Text(
                 t.catalogEmpty(modeLabel(selected)),
@@ -181,7 +224,9 @@ fun CatalogContent(
         } else {
             Spacer(Modifier.height(6.dp))
             for (p in shown) {
-                Column(Modifier.padding(horizontal = 12.dp, vertical = 3.dp)) { CatalogTile(p) { onClick(p) } }
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 3.dp)) {
+                    CatalogTile(p, onQuickOpen = { onQuickOpen(p) }) { onClick(p) }
+                }
             }
             Spacer(Modifier.height(6.dp))
         }
@@ -215,8 +260,16 @@ private fun ModeChip(label: String, selected: Boolean, modifier: Modifier, onCli
     }
 }
 
+/** Colour for a measured download speed: green = fast, amber = usable, red = slow. */
+private fun speedColor(kbps: Int): Color = when {
+    kbps < 0 -> AppColors.onSurfaceMuted
+    kbps >= 150 -> AppColors.green
+    kbps >= 40 -> AppColors.amber
+    else -> AppColors.red
+}
+
 @Composable
-private fun CatalogTile(p: CatalogItem, onClick: () -> Unit) {
+private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: () -> Unit) {
     val t = LocalStrings.current
     Column(
         Modifier.fillMaxWidth()
@@ -260,21 +313,31 @@ private fun CatalogTile(p: CatalogItem, onClick: () -> Unit) {
                 }
                 StatusDot(relayColor, 9)
             }
-            IconStat(ICON_CHECKED, fmtMins(p.checkedMinsAgo, t), Modifier.weight(0.9f))
-            IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.9f))
+            // Real Telegram download speed through this host (the ranking key).
+            IconStat(
+                Icons.Filled.Download,
+                if (p.speedKbps >= 0) p.speedHuman else t.dash,
+                Modifier.weight(1.3f),
+                valueColor = speedColor(p.speedKbps),
+            )
+            IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.8f))
             // Telegram-connects / successful checks / total checks.
-            IconStat(ICON_CHECKS, "${p.tgConnections}/${p.successes}/${p.successes + p.failures}", Modifier.weight(1.5f))
-            IconStat(ICON_TRAFFIC, p.bytesRelayedHuman, Modifier.weight(1.1f))
+            IconStat(ICON_CHECKS, "${p.tgConnections}/${p.successes}/${p.successes + p.failures}", Modifier.weight(1.4f))
+            IconStat(ICON_TRAFFIC, p.bytesRelayedHuman, Modifier.weight(1.0f))
+            // One tap: open this proxy in Telegram's "add proxy" dialog.
+            androidx.compose.material3.IconButton(onClick = onQuickOpen, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Send, contentDescription = t.quickOpenTg, tint = AppColors.accent, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }
 
 @Composable
-private fun IconStat(icon: ImageVector, value: String, modifier: Modifier) {
+private fun IconStat(icon: ImageVector, value: String, modifier: Modifier, valueColor: Color = AppColors.onSurface) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, tint = AppColors.onSurfaceMuted, modifier = Modifier.size(14.dp))
         Spacer(Modifier.width(3.dp))
-        Text(value, color = AppColors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, color = valueColor, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -361,6 +424,17 @@ fun CatalogDetailPage(
                         p.tlsDomain?.let { CopyField(t.tlsDomain, it) }
 
                         DetailRow(Icons.Filled.CheckCircle, t.statusLabel, if (p.alive) t.live else t.deadW, if (p.alive) AppColors.green else AppColors.red)
+                        DetailRow(
+                            Icons.Filled.Download, t.speedField,
+                            if (p.speedKbps >= 0) p.speedHuman else t.speedNotMeasured,
+                            speedColor(p.speedKbps),
+                        )
+                        if (p.speedSamples > 0 || p.stalls > 0) {
+                            DetailRow(Icons.Filled.NetworkCheck, " ", t.speedSamples(p.speedSamples, p.stalls), AppColors.onSurfaceMuted)
+                        }
+                        if (p.coolingDown) {
+                            DetailRow(Icons.Filled.Schedule, t.statusLabel, t.coolingDownWord, AppColors.amber)
+                        }
                         DetailRow(Icons.Filled.Bolt, t.rating, "${p.rating} / 9")
                         DetailRow(Icons.Filled.Dns, t.type, p.typeLabel)
                         DetailRow(Icons.Filled.Speed, t.rttPing, if (p.rttMs >= 0) "${p.rttMs} ${t.unitMs}" else t.dash)

@@ -112,6 +112,7 @@ public final class CheckRunner {
         List<Future<?>> futures = new ArrayList<>();
         Semaphore inflight = new Semaphore(concurrency);
 
+        AtomicInteger running = new AtomicInteger();
         for (ProxyEntry p : list) {
             if (io.autoconnector.engine.core.ScanGate.isProbeAbort()) break;
             try {
@@ -120,12 +121,21 @@ public final class CheckRunner {
                 Thread.currentThread().interrupt();
                 break;
             }
+            // «Telegram first»: while Telegram is downloading through the relay,
+            // keep only a handful of probes in flight so scanning doesn't steal
+            // the bandwidth / radio from the user's download.
+            if (!throttleWhileTelegramBusy(running)) {
+                inflight.release();
+                break;
+            }
+            running.incrementAndGet();
             try {
                 futures.add(pool.submit(() -> {
                     try { probeOne(p, full, stealth, dead); }
-                    finally { inflight.release(); }
+                    finally { running.decrementAndGet(); inflight.release(); }
                 }));
             } catch (Exception ignored) {
+                running.decrementAndGet();
                 inflight.release();
                 break;
             }
@@ -148,6 +158,36 @@ public final class CheckRunner {
         }
         log.line("— done: live " + full + ", stealth " + stealth
                 + ", dead " + dead + " —");
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong LAST_THROTTLE_LOG =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    /** Waits while Telegram is busy and the throttled probe cap is reached.
+     *  Returns false if the scan was aborted meanwhile. */
+    private boolean throttleWhileTelegramBusy(AtomicInteger running) {
+        boolean logged = false;
+        while (io.autoconnector.engine.core.TrafficGovernor.busy()
+                && running.get() >= io.autoconnector.engine.core.TrafficGovernor.probeCap(concurrency)) {
+            if (io.autoconnector.engine.core.ScanGate.isProbeAbort()) return false;
+            if (!logged) {
+                long now = System.currentTimeMillis();
+                long prev = LAST_THROTTLE_LOG.get();
+                if (now - prev > 60_000L && LAST_THROTTLE_LOG.compareAndSet(prev, now)) {
+                    log.line("⏸ Telegram is downloading — scan slowed down to "
+                            + io.autoconnector.engine.core.TrafficGovernor.probeCap(concurrency)
+                            + " parallel probes so Telegram gets the bandwidth");
+                }
+                logged = true;
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return !io.autoconnector.engine.core.ScanGate.isProbeAbort();
     }
 
     private void probeOne(ProxyEntry p,

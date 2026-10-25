@@ -46,7 +46,7 @@ private class Sess(val key: String, val lines: List<LogLine>) {
     val failed: Boolean get() = lines.any { it.level == LogLevel.FAIL }
     val level: LogLevel get() = when {
         failed -> LogLevel.FAIL
-        lines.any { it.text.trimStart().startsWith("→") || it.text.contains("закрыта") } -> LogLevel.OK
+        lines.any { it.text.trimStart().startsWith("→") || it.text.contains("closed") } -> LogLevel.OK
         else -> LogLevel.INFO
     }
     /** Most informative single line: the error, else the chosen upstream, else

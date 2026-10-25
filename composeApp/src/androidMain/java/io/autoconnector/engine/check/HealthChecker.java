@@ -119,7 +119,7 @@ public final class HealthChecker {
             obf.perform(out, secret, DcAddresses.DEFAULT_DC);
             MtHandshakeProbe.probe(new IntermediateTransport(in, out, obf));
 
-            return new Result(Grade.FULL, elapsedMs(t0), "resPQ OK — DC доступен");
+            return new Result(Grade.FULL, elapsedMs(t0), "resPQ OK — DC reachable");
         } finally {
             closeQuietly(s);
         }
@@ -207,15 +207,15 @@ public final class HealthChecker {
             try {
                 int b = in.read();
                 if (b < 0) {
-                    return new Result(Grade.DEAD, -1, "FakeTLS: соединение сброшено");
+                    return new Result(Grade.DEAD, -1, "FakeTLS: connection reset");
                 }
                 String how = (b == 0x16 || b == 0x17)
-                        ? "ServerHello принят"
-                        : "ответ 0x" + Integer.toHexString(b);
+                        ? "ServerHello received"
+                        : "reply 0x" + Integer.toHexString(b);
                 return new Result(Grade.STEALTH, elapsedMs(t0), "FakeTLS stealth: " + how);
             } catch (SocketTimeoutException te) {
                 return new Result(Grade.STEALTH, elapsedMs(t0),
-                        "FakeTLS stealth: persistence (нет сброса)");
+                        "FakeTLS stealth: persistence (no reset)");
             }
         } catch (Exception e) {
             return new Result(Grade.DEAD, -1, reason);

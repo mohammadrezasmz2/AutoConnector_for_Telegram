@@ -62,13 +62,17 @@ fun ScanContent(s: EngineState, onScanNow: () -> Unit, onSetScanMode: (String) -
                     fontWeight = FontWeight.Bold, fontSize = 15.sp,
                 )
                 Text(
-                    "${t.scheduleWord}: ${t.scanEvery} [${period}], ${t.scanBatchPerThread} [${s.scanPlanBatch}] шт, ${t.scanThreads} [${s.scanPlanConcurrency}] шт",
+                    "${t.scheduleWord}: ${t.scanEvery} [${period}], ${t.scanBatchPerThread} [${s.scanPlanBatch}], ${t.scanThreads} [${s.scanPlanConcurrency}]",
                     color = AppColors.onSurfaceMuted, fontSize = 13.sp,
                 )
             }
             IconButton(onClick = onScanNow) {
                 Icon(Icons.Filled.Refresh, t.scanNow, tint = AppColors.accent)
             }
+        }
+        // «Telegram first»: tell the user why the scan just slowed down.
+        if (s.tgBusy && s.scanEnabled) {
+            Text(t.scanThrottledTg, color = AppColors.amber, fontSize = 13.sp)
         }
 
         // Live scan graphs (same look as the connector tab): successful / failed
@@ -127,7 +131,7 @@ fun ScanContent(s: EngineState, onScanNow: () -> Unit, onSetScanMode: (String) -
         }
 
         // Live "now" snapshot, transposed to label:value rows.
-        fun dur(sec: Long): String = if (sec >= 60) "${sec / 60}м ${sec % 60}с" else "${sec}с"
+        fun dur(sec: Long): String = if (sec >= 60) "${sec / 60}m ${sec % 60}s" else "${sec}s"
         Text(t.scanNowTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         StatTable(
             rows = listOf(

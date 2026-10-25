@@ -151,14 +151,14 @@ public final class PrewarmPool {
                     it.remove();
                     try {
                         UpstreamConnector.finishObf(e.ch, tag, dcId);
-                        RelayLog.emit("⚡ prewarm: тёплый сокет (deferred) → " + hostOf(e) + " DC" + dcId);
+                        RelayLog.emit("⚡ prewarm: warm socket (deferred) → " + hostOf(e) + " DC" + dcId);
                         return e.ch;
                     } catch (Exception ex) {
                         closeQuietly(e.ch);   // dead/stale — try the next, else fall back
                     }
                 } else if (e.dcId == dcId && e.tag == tag) {
                     it.remove();
-                    RelayLog.emit("⚡ prewarm: тёплый сокет (full) → " + hostOf(e) + " DC" + dcId);
+                    RelayLog.emit("⚡ prewarm: warm socket (full) → " + hostOf(e) + " DC" + dcId);
                     return e.ch;
                 }
             }

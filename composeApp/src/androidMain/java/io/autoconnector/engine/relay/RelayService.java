@@ -192,11 +192,11 @@ public final class RelayService extends Service {
             subsRunning = true;
             new Thread(() -> {
                 try {
-                    RelayLog.emit("@subs", "⟳ плановое обновление подписок (каждые "
-                            + (intervalMs / 60000) + " мин)");
+                    RelayLog.emit("@subs", "⟳ scheduled subscription refresh (every "
+                            + (intervalMs / 60000) + " min)");
                     scheduledRefresh(store);
                 } catch (Throwable t) {
-                    RelayLog.emit("@subs", "⚠ плановое обновление: " + t.getMessage());
+                    RelayLog.emit("@subs", "⚠ scheduled refresh: " + t.getMessage());
                 } finally {
                     subsRunning = false;
                     if (manager != null) try { manager.refreshStickies(); } catch (Throwable ignored) {}
@@ -208,8 +208,8 @@ public final class RelayService extends Service {
         // nothing to check, so the scan waits on the subscription download. This
         // line is the user-facing justification for the (apparent) idle scan.
         if (total == 0) {
-            RelayLog.emit("@scan", "— хостов пока нет — сканировать нечего; "
-                    + "запускаю интенсивную закачку подписок, скан стартует сам —");
+            RelayLog.emit("@scan", "— no hosts yet — nothing to scan; "
+                    + "starting an intensive subscription download, the scan will start by itself —");
         }
         // Keep hammering while the pool is thin. An EMPTY pool fires immediately
         // (no cooldown) so a wipe / fresh start kicks off in seconds; a merely
@@ -225,12 +225,12 @@ public final class RelayService extends Service {
         // long download never starves the relay's health checks.
         new Thread(() -> {
             try {
-                RelayLog.emit("@subs", "⇣ мало прокси (в базе " + total
-                        + ", живых " + alive + ") — интенсивная закачка подписок");
+                RelayLog.emit("@subs", "⇣ few proxies (in database " + total
+                        + ", live " + alive + ") — intensive subscription download");
                 intensiveDownload(store);
                 intensiveMassCheck(store);
             } catch (Throwable t) {
-                RelayLog.emit("@subs", "⚠ закачка подписок: " + t.getMessage());
+                RelayLog.emit("@subs", "⚠ subscription download: " + t.getMessage());
             } finally {
                 subsRunning = false;
                 if (manager != null) try { manager.refreshStickies(); } catch (Throwable ignored) {}
@@ -243,14 +243,20 @@ public final class RelayService extends Service {
      *  Newly added hosts are graded by the regular scan/check loop. */
     private void scheduledRefresh(ProxyStore store) {
         if (io.autoconnector.engine.core.ScanGate.isAborted()) return;
+        // «Telegram first»: the pool is healthy, so a routine refresh can wait
+        // until Telegram finishes its download (max 10 min).
+        if (io.autoconnector.engine.core.TrafficGovernor.busy()) {
+            RelayLog.emit("@subs", "⏸ Telegram is downloading — subscription refresh postponed");
+            io.autoconnector.engine.core.TrafficGovernor.waitWhileBusy(10 * 60_000L);
+        }
         PageScanner scanner = new PageScanner(store, line -> RelayLog.emit("@subs", line));
         List<String> srcs = store.enabledSourceUrls();
         if (srcs.isEmpty()) return;
         int before = store.count();
         int threads = Math.min(32, Math.max(8, srcs.size()));
-        RelayLog.emit("@subs", "⟳ обновляю " + srcs.size() + " подписок × " + threads + " потоков");
+        RelayLog.emit("@subs", "⟳ refreshing " + srcs.size() + " subscriptions × " + threads + " threads");
         downloadSourcesParallel(scanner, store, srcs, threads);
-        RelayLog.emit("@subs", "⟳ готово: в базе " + store.count() + " прокси (+"
+        RelayLog.emit("@subs", "⟳ done: in database " + store.count() + " proxies (+"
                 + Math.max(0, store.count() - before) + ")");
     }
 
@@ -266,11 +272,11 @@ public final class RelayService extends Service {
             round++;
             // Always many threads — pull (almost) every pending source at once.
             int threads = Math.min(32, Math.max(16, pending.size()));
-            RelayLog.emit("@subs", "⇣ проход " + round + ": " + pending.size()
-                    + " подписок × " + threads + " потоков");
+            RelayLog.emit("@subs", "⇣ pass " + round + ": " + pending.size()
+                    + " subscriptions × " + threads + " threads");
             pending = downloadSourcesParallel(scanner, store, pending, threads);
-            RelayLog.emit("@subs", "⇣ проход " + round + " готов: в базе "
-                    + store.count() + " прокси, не скачано " + pending.size());
+            RelayLog.emit("@subs", "⇣ pass " + round + " done: in database "
+                    + store.count() + " proxies, not downloaded " + pending.size());
             if (pending.isEmpty()) break;
             long backoff = Math.min(15_000L, 1500L * round), slept = 0;
             while (slept < backoff && !io.autoconnector.engine.core.ScanGate.isAborted()
@@ -280,8 +286,8 @@ public final class RelayService extends Service {
             }
         }
         if (!pending.isEmpty())
-            RelayLog.emit("@subs", "✗ после " + round + " проходов не скачано "
-                    + pending.size() + " подписок — повторю позже");
+            RelayLog.emit("@subs", "✗ after " + round + " passes, not downloaded: "
+                    + pending.size() + " subscriptions — will retry later");
     }
 
     private List<String> downloadSourcesParallel(PageScanner scanner, ProxyStore store,
@@ -320,14 +326,14 @@ public final class RelayService extends Service {
     /** Sustained mass-check of the freshly-downloaded pool until enough are alive. */
     private void intensiveMassCheck(ProxyStore store) {
         int total = store.count();
-        if (total == 0) { RelayLog.emit("@scan", "— база пуста, проверять нечего —"); return; }
+        if (total == 0) { RelayLog.emit("@scan", "— database is empty, nothing to check —"); return; }
         Prefs pp = new Prefs(this);
         int target = pp.adaptiveAliveThreshold();
         int conc = Math.max(32, Math.min(Prefs.CONCURRENCY_CAP, total / 3));
         io.autoconnector.engine.net.HandshakeMode probe = pp.dpiApplyProbes()
                 ? io.autoconnector.engine.net.HandshakeMode.fromOrdinal(pp.handshakeMode())
                 : io.autoconnector.engine.net.HandshakeMode.NORMAL;
-        RelayLog.emit("@scan", "— собрано " + total + " прокси, массовая проверка —");
+        RelayLog.emit("@scan", "— collected " + total + " proxies, mass check —");
         int round = 0;
         while (round < 8 && new Prefs(this).scanEnabled()
                 && !io.autoconnector.engine.core.ScanGate.isAborted()
@@ -336,10 +342,10 @@ public final class RelayService extends Service {
             runner.setProbeMode(probe);
             runner.runBatch(Math.min(store.count(), 600));
             round++;
-            RelayLog.emit("@scan", "— раунд " + round + ": живых "
+            RelayLog.emit("@scan", "— round " + round + ": live "
                     + store.countAlive() + " / " + store.count() + " —");
         }
-        RelayLog.emit("@scan", "— готово: живых " + store.countAlive() + " / " + store.count() + " —");
+        RelayLog.emit("@scan", "— done: live " + store.countAlive() + " / " + store.count() + " —");
     }
 
     /** Coalesces notification updates so a burst of relay events
@@ -412,10 +418,10 @@ public final class RelayService extends Service {
         createChannel();
         try {
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(NOTIF_ID, buildNotification("Релей запускается…"),
+                startForeground(NOTIF_ID, buildNotification("Relay is starting…"),
                         android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             } else {
-                startForeground(NOTIF_ID, buildNotification("Релей запускается…"));
+                startForeground(NOTIF_ID, buildNotification("Relay is starting…"));
             }
         } catch (Throwable ignored) {
             // Couldn't promote — Android may still kill us, but at least we
@@ -448,8 +454,8 @@ public final class RelayService extends Service {
                         io.autoconnector.engine.core.NetworkMonitor.get();
                 if (nm != null && netListener == null) {
                     netListener = newMode -> {
-                        RelayLog.emit("⟳ сеть → " + newMode.label
-                                + " · обновляю sticky и проверяю топ");
+                        RelayLog.emit("⟳ network → " + newMode.label
+                                + " · refreshing sticky hosts and checking the top");
                         if (manager != null) manager.refreshStickies();
                         if (new Prefs(this).scanEnabled()) svc.post(mainsCheckTask);
                     };
@@ -457,7 +463,7 @@ public final class RelayService extends Service {
                 }
                 applyPrefs();
             } catch (Throwable t) {
-                updateNotification("Сбой: " + t.getClass().getSimpleName());
+                updateNotification("Failure: " + t.getClass().getSimpleName());
             }
         });
         return START_STICKY;
@@ -469,6 +475,7 @@ public final class RelayService extends Service {
      *  and on every ACTION_RECONFIGURE intent (UI toggle). */
     private void applyPrefs() {
         Prefs prefs = new Prefs(this);
+        RelayManager.applyTuningPrefs(this);
         boolean proxyOn = prefs.appEnabled();
         boolean scanOn = prefs.scanEnabled();
         // --- relay/ports ---
@@ -481,9 +488,9 @@ public final class RelayService extends Service {
                         line -> svc.post(this::scheduleNotifRefresh),
                         getApplicationContext());
                 manager.start();
-                RelayLog.emit("⏻ релей запущен, порты " + portA + "/" + portB);
+                RelayLog.emit("⏻ relay started, ports " + portA + "/" + portB);
             } catch (IOException e) {
-                updateNotification("Ошибка запуска: " + e.getMessage());
+                updateNotification("Start error: " + e.getMessage());
                 manager = null;
             }
         } else if (!proxyOn && manager != null) {
@@ -492,7 +499,7 @@ public final class RelayService extends Service {
             } catch (Throwable ignored) {}
             manager = null;
             RelayStats.reset();
-            RelayLog.emit("⏻ релей остановлен, порты закрыты");
+            RelayLog.emit("⏻ relay stopped, ports closed");
         }
         // --- background scanning ---
         svc.removeCallbacks(mainsCheckTask);
@@ -562,8 +569,8 @@ public final class RelayService extends Service {
             // dueForCheck(batch) silently ignored.
             List<ProxyEntry> due;
             if (energySaverBlocksExploration(prefs)) {
-                RelayLog.emit("@scan", "⏸ энергосбережение: фоновую разведку пропускаю "
-                        + "(главные проверяются как обычно)");
+                RelayLog.emit("@scan", "⏸ power saving: skipping background exploration "
+                        + "(main hosts are checked as usual)");
                 due = java.util.Collections.emptyList();
             } else {
                 due = store.dueForCheck(batch, prefs.minRescanMin() * 60_000L);
@@ -574,8 +581,8 @@ public final class RelayService extends Service {
             }
             if (combined.isEmpty()) return;
 
-            RelayLog.emit("@scan", "⟳ проверка: главных " + mains.size()
-                    + " + новых " + (combined.size() - mains.size()));
+            RelayLog.emit("@scan", "⟳ check: main " + mains.size()
+                    + " + new " + (combined.size() - mains.size()));
             CheckRunner runner = new CheckRunner(store, line -> RelayLog.emit("@scan", line),
                     Math.min(conc, combined.size()));
             runner.runOn(combined, "mains+due");
@@ -587,19 +594,19 @@ public final class RelayService extends Service {
             for (ProxyEntry p : after) if (p.alive) aliveMains++;
 
             int aliveTotal = store.aliveCount();
-            RelayLog.emit("@scan", "⟳ главные: " + aliveMains + "/" + after.size()
-                    + " · в базе живых: " + aliveTotal);
+            RelayLog.emit("@scan", "⟳ main: " + aliveMains + "/" + after.size()
+                    + " · live in database: " + aliveTotal);
 
             if (manager != null) manager.refreshStickies();
 
             // Cascade: every sticky just died AND there are alive hosts
             // elsewhere — go find them aggressively.
             if (!mains.isEmpty() && aliveMains == 0) {
-                RelayLog.emit("@scan", "⚠ все главные мертвы — широкая проверка топ-200");
+                RelayLog.emit("@scan", "⚠ all main hosts are dead — wide check of the top 200");
                 CheckRunner wide = new CheckRunner(store, line -> RelayLog.emit("@scan", line), 16);
                 wide.runOn(store.top(200), "wide-after-cascade");
                 if (manager != null) manager.refreshStickies();
-                RelayLog.emit("@scan", "⟳ широкая проверка готова · живых: "
+                RelayLog.emit("@scan", "⟳ wide check done · live: "
                         + store.aliveCount());
             }
         });
@@ -670,9 +677,9 @@ public final class RelayService extends Service {
     }
 
     private void refreshNotification() {
-        updateNotification("Порты " + portA + "/" + portB
-                + " · соединений: " + RelayStats.active.get()
-                + " · всего: " + RelayStats.totalConns.get());
+        updateNotification("Ports " + portA + "/" + portB
+                + " · connections: " + RelayStats.active.get()
+                + " · total: " + RelayStats.totalConns.get());
     }
 
     // --- notification plumbing --------------------------------------------
@@ -682,7 +689,7 @@ public final class RelayService extends Service {
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm == null) return;
             NotificationChannel low = new NotificationChannel(
-                    CHANNEL_ID, "Релей", NotificationManager.IMPORTANCE_LOW);
+                    CHANNEL_ID, "Relay", NotificationManager.IMPORTANCE_LOW);
             low.setShowBadge(false);
             nm.createNotificationChannel(low);
             // Min-importance channel for "Уведомления отключены" mode:
@@ -690,7 +697,7 @@ public final class RelayService extends Service {
             // drawer. We can't kill the notification entirely while a
             // foreground service runs, but this is the quietest Android allows.
             NotificationChannel min = new NotificationChannel(
-                    CHANNEL_ID_QUIET, "Релей (тихо)", NotificationManager.IMPORTANCE_MIN);
+                    CHANNEL_ID_QUIET, "Relay (quiet)", NotificationManager.IMPORTANCE_MIN);
             min.setShowBadge(false);
             min.setSound(null, null);
             min.enableVibration(false);
@@ -710,7 +717,7 @@ public final class RelayService extends Service {
         boolean quiet = !new Prefs(this).notificationsEnabled();
         String channelId = quiet ? CHANNEL_ID_QUIET : CHANNEL_ID;
         NotificationCompat.Builder b = new NotificationCompat.Builder(this, channelId)
-                .setContentTitle("AutoConnector for Telegram — релей активен")
+                .setContentTitle("AutoConnector for Telegram — relay active")
                 .setContentText(text)
                 .setSmallIcon(R.drawable.ic_stat)
                 .setOngoing(true)

@@ -50,6 +50,9 @@ import io.autoconnector.engine.relay.RelayManager
 import io.autoconnector.engine.relay.RelayService
 import io.autoconnector.engine.relay.WireShaper
 import io.autoconnector.engine.relay.RelayStats
+import io.autoconnector.engine.relay.AutoTuner
+import io.autoconnector.engine.relay.SpeedBoard
+import io.autoconnector.engine.core.TrafficGovernor
 import io.autoconnector.engine.scan.PageScanner
 import io.autoconnector.engine.scan.ProxyParser
 import io.autoconnector.engine.traffic.CheckRateBuffer
@@ -78,6 +81,9 @@ private const val CONNECTED_MIN_BYTES = 1024L
 private const val LOG_CAP_TELE = 500
 private const val LOG_CAP_SCAN = 300
 private const val LOG_CAP_SUBS = 150
+// Catalog: how many candidate rows to fetch per mode, and how many to show.
+private const val CATALOG_POOL = 300
+private const val CATALOG_SHOWN = 60
 
 /** Android implementation of [Engine], backed by the existing Java relay engine. */
 class AndroidEngine(context: Context) : Engine {
@@ -114,6 +120,8 @@ class AndroidEngine(context: Context) : Engine {
     override fun start() {
         HandshakeStats.init(ctx)
         NetworkMonitor.init(ctx)
+        SpeedBoard.init(store)
+        RelayManager.applyTuningPrefs(ctx)
         // Net-log goes to the app's external files dir so the user can pull it
         // with a file manager (falls back to private files dir).
         NetLog.init(ctx.getExternalFilesDir(null) ?: ctx.filesDir)
@@ -235,6 +243,10 @@ class AndroidEngine(context: Context) : Engine {
             prewarmHoldSecs = p.prewarmHoldSecs(),
             themeMode = p.themeMode(),
             drawGraphs = p.drawGraphs(),
+            speedPriority = p.speedPriority(),
+            stallGuard = p.stallGuard(),
+            autoTune = p.autoTune(),
+            tgFirstScan = p.tgFirstScan(),
         )
     }
 
@@ -287,6 +299,11 @@ class AndroidEngine(context: Context) : Engine {
         p.setPrewarmHoldSecs(s.prewarmHoldSecs)
         p.setThemeMode(s.themeMode)
         p.setDrawGraphs(s.drawGraphs)
+        p.setSpeedPriority(s.speedPriority)
+        p.setStallGuard(s.stallGuard)
+        p.setAutoTune(s.autoTune)
+        p.setTgFirstScan(s.tgFirstScan)
+        RelayManager.applyTuningPrefs(ctx)
         NetLog.setEnabled(s.netLogEnabled)
         // Re-apply the override only when the mode picker actually changed, so a
         // plain settings-save doesn't kick the network monitor.
@@ -310,8 +327,8 @@ class AndroidEngine(context: Context) : Engine {
         ordered.add(auto); ordered.add(normal); ordered.addAll(rest)
         return ordered.map { m ->
             val label = when (m) {
-                auto -> "Авто-перебор DPI-трюков"
-                normal -> "Без DPI-трюков (обычный)"
+                auto -> "Auto-cycle anti-DPI tricks"
+                normal -> "No anti-DPI tricks (plain)"
                 else -> m.label
             }
             HandshakeOption(m.ordinal, label, m == auto || m == normal)
@@ -535,18 +552,18 @@ class AndroidEngine(context: Context) : Engine {
     override fun importBackupText(text: String, settings: Boolean, subs: Boolean, hosts: Boolean): String {
         return try {
             val r = io.autoconnector.engine.io.BackupIo.importInto(store, Prefs(ctx), text, settings, subs, hosts)
-            if (r.status == null) return "⚠ В тексте нет выбранных разделов"
+            if (r.status == null) return "⚠ The text contains none of the selected sections"
             if (r.hostsChanged) { refreshCatalog(); refreshSources() }
             else if (r.subsChanged) refreshSources()
             appendLog("⤒ import: ${r.status}")
-            "✓ Импортировано: ${r.status}"
+            "✓ Imported: ${r.status}"
         } catch (t: Throwable) {
-            "⚠ Ошибка импорта: ${t.message}"
+            "⚠ Import error: ${t.message}"
         }
     }
 
     override fun saveTextToFile(suggestedName: String, text: String): String =
-        "На Android используйте «Скопировать»"
+        "On Android use \"Copy\""
     override fun pickTextFile(): String? = null
     override fun fileIoSupported(): Boolean = false
 
@@ -624,7 +641,31 @@ class AndroidEngine(context: Context) : Engine {
         }
     }
 
+    // Per-mode catalog cache. Built OFF the UI thread with ONE SQL query per mode
+    // (the old per-row modeStatsOf/primarySourceId lookups ran 100+ queries on
+    // every recomposition) and re-ranked by measured download speed every poll
+    // tick for the modes the Catalog tab looked at recently.
+    private val catalogCache = java.util.concurrent.ConcurrentHashMap<String, List<CatalogItem>>()
+    private val catalogWanted = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     override fun catalogForMode(modeCode: String): List<CatalogItem> {
+        catalogWanted[modeCode] = System.currentTimeMillis()
+        catalogCache[modeCode]?.let { return it }
+        return try {
+            buildCatalog(modeCode).also { catalogCache[modeCode] = it }
+        } catch (_: Throwable) { emptyList() }
+    }
+
+    /** Rebuilds the catalogs the UI asked for in the last 20 s (poll-loop thread). */
+    private fun refreshWantedCatalogs() {
+        val now = System.currentTimeMillis()
+        for ((code, at) in catalogWanted) {
+            if (now - at > 20_000L) continue
+            try { catalogCache[code] = buildCatalog(code) } catch (_: Throwable) {}
+        }
+    }
+
+    private fun buildCatalog(modeCode: String): List<CatalogItem> {
         val now = System.currentTimeMillis()
         val mode = NetworkMode.fromCode(modeCode)
         val nums = HashMap<Long, Int>()
@@ -634,48 +675,75 @@ class AndroidEngine(context: Context) : Engine {
         for (c in RelayStats.liveConnections()) liveIds.add(c.upstreamProxyId)
         val sticky = RelayManager.currentStickyProxyIds()
         val pinnedId = RelayManager.currentPinnedId()
+        // Speeds are recorded under the network mode they were measured on; the
+        // global (auto) view shows the speeds of the network we're on right now.
+        val speedMode = if (mode == NetworkMode.UNKNOWN) NetworkMonitor.currentMode() else mode
+        val rows = if (mode == NetworkMode.UNKNOWN) store.catalogRowsGlobal(CATALOG_POOL)
+                   else store.catalogRowsForMode(mode, CATALOG_POOL)
+        val items = rows.map { r -> catalogItemOf(r, speedMode, now, nums, liveIds, sticky, pinnedId) }
+        return rankCatalog(items).take(CATALOG_SHOWN)
+    }
 
-        // auto / unknown → the global top-50 (same as the live catalog tab).
-        if (mode == NetworkMode.UNKNOWN) {
-            return store.top(50).map { p -> globalCatalogItem(p, now, nums, liveIds, sticky, pinnedId) }
+    /** Best first: pinned, then proven-fast (by real download speed), then not
+     *  yet measured (by rating), then measured-slow, then cooling-down, then dead. */
+    private fun rankCatalog(items: List<CatalogItem>): List<CatalogItem> {
+        fun tier(c: CatalogItem): Int = when {
+            c.pinned -> -1
+            !c.alive -> 4
+            c.coolingDown -> 3
+            c.speedKbps >= SpeedBoard.SLOW_KBPS.toInt() -> 0
+            c.speedKbps < 0 -> 1
+            else -> 2
         }
+        return items.sortedWith(
+            compareBy<CatalogItem> { tier(it) }
+                .thenByDescending { it.speedKbps }
+                .thenByDescending { it.rating }
+                .thenBy { if (it.rttMs >= 0) it.rttMs else Int.MAX_VALUE }
+        )
+    }
 
-        return store.topForMode(mode, 50).map { p ->
-            val srcId = store.primarySourceId(p.id)
-            val tls = if (p.isFakeTls) FakeTlsClient.domainFromSecret(p.secret) else null
-            val ms = store.modeStatsOf(p.id, mode)
-            val alive = ms != null && ms.lastCheck > 0 && ms.alive
-            val score = ms?.score ?: 0.0
-            CatalogItem(
-                id = p.id,
-                host = hostLabel(p),
-                typeLabel = typeLabel(p),
-                rating = if (!alive || score <= 0.0) 0 else minOf(9, maxOf(1, (score / 10.0).toInt())),
-                alive = alive,
-                live = liveIds.contains(p.id),
-                pinned = pinnedId == p.id,
-                sticky = pinnedId != p.id && sticky.contains(p.id),
-                // "Telegram connected" is meaningful regardless of network mode,
-                // and the per-mode counter is rarely incremented — so show the
-                // host's GLOBAL last-connect time and count (fixes the dashes the
-                // per-mode catalog showed for "Telegram подключался").
-                everServed = p.lastTgConnectAt > 0 || p.tgConnections > 0,
-                sourceNum = if (srcId > 0) nums[srcId] else null,
-                checkedMinsAgo = if (ms != null && ms.lastCheck > 0) (now - ms.lastCheck) / 60_000 else -1,
-                tgConnectMinsAgo = if (p.lastTgConnectAt > 0) (now - p.lastTgConnectAt) / 60_000 else -1,
-                successes = ms?.successes ?: 0,
-                failures = ms?.failures ?: 0,
-                tgConnections = p.tgConnections,
-                bytesRelayed = ms?.bytesRelayed ?: 0L,
-                bytesRelayedHuman = TrafficMeter.human(ms?.bytesRelayed ?: 0L),
-                sessionTotalHuman = (ms?.totalSessionMs ?: 0L).let { if (it > 0) Durations.human(it / 1000) else "—" },
-                rttMs = ms?.rttMs ?: -1,
-                secret = p.secret,
-                tlsDomain = tls?.takeIf { it.isNotEmpty() },
-                port = p.port,
-                lastErrorShort = p.lastError?.takeIf { it.isNotBlank() }?.let { if (it.length > 40) it.substring(0, 39) + "…" else it },
-            )
-        }
+    private fun catalogItemOf(
+        r: ProxyStore.CatalogRow, speedMode: NetworkMode, now: Long, nums: Map<Long, Int>,
+        liveIds: Set<Long>, sticky: Set<Long>, pinnedId: Long,
+    ): CatalogItem {
+        val p = r.proxy
+        val tls = if (p.isFakeTls) FakeTlsClient.domainFromSecret(p.secret) else null
+        val alive = r.modeLastCheck > 0 && r.modeAlive
+        val st = SpeedBoard.get(p.id, speedMode)
+        val eff = st?.effective(now) ?: -1.0
+        return CatalogItem(
+            id = p.id,
+            host = hostLabel(p),
+            typeLabel = typeLabel(p),
+            rating = if (!alive || r.modeScore <= 0.0) 0 else minOf(9, maxOf(1, (r.modeScore / 10.0).toInt())),
+            alive = alive,
+            live = liveIds.contains(p.id),
+            pinned = pinnedId == p.id,
+            sticky = pinnedId != p.id && sticky.contains(p.id),
+            // "Telegram connected" is meaningful regardless of network mode, so
+            // show the host's GLOBAL last-connect time and count.
+            everServed = p.lastTgConnectAt > 0 || p.tgConnections > 0,
+            sourceNum = if (r.sourceId > 0) nums[r.sourceId] else null,
+            checkedMinsAgo = if (r.modeLastCheck > 0) (now - r.modeLastCheck) / 60_000 else -1,
+            tgConnectMinsAgo = if (p.lastTgConnectAt > 0) (now - p.lastTgConnectAt) / 60_000 else -1,
+            successes = r.modeSuccesses,
+            failures = r.modeFailures,
+            tgConnections = p.tgConnections,
+            bytesRelayed = r.modeBytes,
+            bytesRelayedHuman = TrafficMeter.human(r.modeBytes),
+            sessionTotalHuman = if (r.modeSessionMs > 0) Durations.human(r.modeSessionMs / 1000) else "—",
+            rttMs = r.modeRtt,
+            secret = p.secret,
+            tlsDomain = tls?.takeIf { it.isNotEmpty() },
+            port = p.port,
+            lastErrorShort = p.lastError?.takeIf { it.isNotBlank() }?.let { if (it.length > 40) it.substring(0, 39) + "…" else it },
+            speedKbps = if (eff >= 0) eff.toInt() else -1,
+            speedHuman = if (eff >= 0) AutoTuner.fmtKbps(eff) else "",
+            speedSamples = st?.samples ?: 0,
+            stalls = st?.stalls ?: 0,
+            coolingDown = r.coolUntil > now,
+        )
     }
 
     /** Connector-tab pre-warm table: warming (idle) + in-use prewarmed sockets. */
@@ -858,6 +926,8 @@ class AndroidEngine(context: Context) : Engine {
                 // the disk while the screen is off.
                 val refreshEvery = if (uiActive) 4 else 5
                 if (i % refreshEvery == 0) { refreshCatalog(); refreshSources() }
+                // The Catalog tab re-ranks live (every 2 s) while it is open.
+                if (uiActive) refreshWantedCatalogs()
             } catch (_: Throwable) {
             }
             i++
@@ -929,29 +999,29 @@ class AndroidEngine(context: Context) : Engine {
         when {
             conns.isEmpty() && pending == 0 -> {
                 connState = ConnState.OFFLINE
-                statusText = "Telegram не подключён"
+                statusText = "Telegram not connected"
                 val last = p.lastTelegramConnectMs()
-                statusSub = if (last > 0) "был ${Durations.human((now - last) / 1000)} назад" else "ждём подключения"
+                statusSub = if (last > 0) "last seen ${Durations.human((now - last) / 1000)} ago" else "waiting for connection"
             }
             // Live sockets + real bytes carried (or data within the last 20 s) →
             // a working tunnel, regardless of momentary silence.
             conns.isNotEmpty() && (tunnelWorks || recentMs <= 20_000) -> {
                 connState = ConnState.CONNECTED
-                statusText = "Telegram подключён"
-                statusSub = "идёт ${Durations.human(sessionSec)} · ${TrafficMeter.human(sessionBytes)}"
+                statusText = "Telegram connected"
+                statusSub = "running ${Durations.human(sessionSec)} · ${TrafficMeter.human(sessionBytes)}"
             }
             else -> {
                 connState = ConnState.CONNECTING
-                statusText = "Идёт коннект…"
-                statusSub = if (sessionSec > 0) "${Durations.human(sessionSec)} · рукопожатие"
-                    else "рукопожатие, сокетов ${conns.size + pending}"
+                statusText = "Connecting…"
+                statusSub = if (sessionSec > 0) "${Durations.human(sessionSec)} · handshake"
+                    else "handshake, sockets ${conns.size + pending}"
             }
         }
 
         val latency = if (conns.isEmpty()) "—" else {
             var tot = 0; var n = 0
             for (c in conns) if (c.rttMs > 0) { tot += c.rttMs; n++ }
-            if (n > 0) "~${tot / n} мс" else "—"
+            if (n > 0) "~${tot / n} ms" else "—"
         }
 
         val sessions = conns.map { c ->
@@ -1037,9 +1107,9 @@ class AndroidEngine(context: Context) : Engine {
         // of the relay ports (no need to wait for both).
         val setupNeeded = !(aLastA || bLastB)
         val cta = when {
-            !aLastA && !bLastB -> "⚠ Релей ещё не настроен в Telegram"
-            !aLastA -> "⚠ Порт ${p.relayPortA()} ещё не виден Telegram"
-            !bLastB -> "⚠ Порт ${p.relayPortB()} ещё не виден Telegram"
+            !aLastA && !bLastB -> "⚠ The relay is not set up in Telegram yet"
+            !aLastA -> "⚠ Telegram has not used port ${p.relayPortA()} yet"
+            !bLastB -> "⚠ Telegram has not used port ${p.relayPortB()} yet"
             else -> null
         }
 
@@ -1091,6 +1161,8 @@ class AndroidEngine(context: Context) : Engine {
             testHostId = io.autoconnector.engine.check.HostTester.testingId(),
             testRunning = io.autoconnector.engine.check.HostTester.running(),
             testSummary = io.autoconnector.engine.check.HostTester.summary(),
+            autoTuneSummary = AutoTuner.summary(),
+            tgBusy = TrafficGovernor.busy(),
             socketsTgToConnector = maxOf(0, conns.size + pending),
             socketsConnectorToProxy = conns.size,
             currentProxy = currentProxy,
@@ -1180,7 +1252,7 @@ class AndroidEngine(context: Context) : Engine {
         val dpi = if (c.upstreamMtproto) {
             val user = HandshakeMode.fromOrdinal(p.handshakeMode())
             if (user == HandshakeMode.AUTO_RANDOM)
-                "Авто" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
+                "Auto" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
             else user.label
         } else "—"
 
@@ -1200,14 +1272,14 @@ class AndroidEngine(context: Context) : Engine {
      *  bare MTProto, or none for SOCKS5. */
     private fun obfEngineLabel(entry: ProxyEntry?, mtproto: Boolean, hasTls: Boolean): String {
         if (entry != null) {
-            if (entry.type != ProxyType.MTPROTO) return "нет (SOCKS5)"
+            if (entry.type != ProxyType.MTPROTO) return "none (SOCKS5)"
             return when {
                 entry.isFakeTls -> "FakeTLS (ee)"
                 entry.isDdSecret -> "Secure (dd)"
-                else -> "MTProto (обычный)"
+                else -> "MTProto (plain)"
             }
         }
-        if (!mtproto) return "нет (SOCKS5)"
+        if (!mtproto) return "none (SOCKS5)"
         return if (hasTls) "FakeTLS (ee)" else "MTProto"
     }
 
@@ -1222,7 +1294,7 @@ class AndroidEngine(context: Context) : Engine {
         val dpi = if (entry.type == ProxyType.MTPROTO) {
             val user = HandshakeMode.fromOrdinal(p.handshakeMode())
             if (user == HandshakeMode.AUTO_RANDOM)
-                "Авто" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
+                "Auto" + (HandshakeStats.lastUsed()?.let { " → ${it.label}" } ?: "")
             else user.label
         } else "—"
         val obf = obfEngineLabel(entry, entry.type == ProxyType.MTPROTO, tls != null)
@@ -1232,67 +1304,21 @@ class AndroidEngine(context: Context) : Engine {
     private fun modeBadge(p: Prefs): String {
         val net = NetworkMonitor.currentMode()
         if (p.shouldBypassProxies())
-            return "Сеть: ${net.label} · прямой выход" + (if (p.dpiApplyDirect()) " · анти-DPI" else "")
+            return "Network: ${net.label} · direct" + (if (p.dpiApplyDirect()) " · anti-DPI" else "")
         val user = HandshakeMode.fromOrdinal(p.handshakeMode())
         val dpi = if (user == HandshakeMode.AUTO_RANDOM) {
             val last = HandshakeStats.lastUsed()
-            "Авто" + (if (last != null) " → ${last.label}" else "")
+            "Auto" + (if (last != null) " → ${last.label}" else "")
         } else user.label
-        return "Сеть: ${net.label} · Анти-DPI: $dpi"
+        return "Network: ${net.label} · Anti-DPI: $dpi"
     }
 
     // === catalog / sources refresh ======================================
 
     private fun refreshCatalog() {
-        val now = System.currentTimeMillis()
-        // Cap at the 50 most profitable so the catalog list never lags.
-        val list = store.top(50)
-        val nums = HashMap<Long, Int>()
-        var i = 1
-        for (s in store.listSources()) nums[s.id] = i++
-        val liveIds = HashSet<Long>()
-        for (c in RelayStats.liveConnections()) liveIds.add(c.upstreamProxyId)
-        val sticky = RelayManager.currentStickyProxyIds()
-        val pinnedId = RelayManager.currentPinnedId()
-        _catalog.value = list.map { p ->
-            globalCatalogItem(p, now, nums, liveIds, sticky, pinnedId)
-        }
-    }
-
-    /** Maps a global proxy row → [CatalogItem] using its global (mode-agnostic)
-     *  rating columns. Shared by [refreshCatalog] and the auto/unknown branch of
-     *  [catalogForMode]. */
-    private fun globalCatalogItem(
-        p: ProxyEntry, now: Long, nums: Map<Long, Int>,
-        liveIds: Set<Long>, sticky: Set<Long>, pinnedId: Long,
-    ): CatalogItem {
-        val srcId = store.primarySourceId(p.id)
-        val tls = if (p.isFakeTls) FakeTlsClient.domainFromSecret(p.secret) else null
-        return CatalogItem(
-            id = p.id,
-            host = hostLabel(p),
-            typeLabel = typeLabel(p),
-            rating = if (!p.alive || p.score <= 0.0) 0 else minOf(9, maxOf(1, (p.score / 10.0).toInt())),
-            alive = p.lastCheck > 0 && p.alive,
-            live = liveIds.contains(p.id),
-            pinned = pinnedId == p.id,
-            sticky = pinnedId != p.id && sticky.contains(p.id),
-            everServed = p.lastTgConnectAt > 0 || p.tgConnections > 0,
-            sourceNum = if (srcId > 0) nums[srcId] else null,
-            checkedMinsAgo = if (p.lastCheck > 0) (now - p.lastCheck) / 60_000 else -1,
-            tgConnectMinsAgo = if (p.lastTgConnectAt > 0) (now - p.lastTgConnectAt) / 60_000 else -1,
-            successes = p.successes,
-            failures = p.failures,
-            tgConnections = p.tgConnections,
-            bytesRelayed = p.bytesRelayed,
-            bytesRelayedHuman = TrafficMeter.human(p.bytesRelayed),
-            sessionTotalHuman = if (p.totalSessionMs > 0) Durations.human(p.totalSessionMs / 1000) else "—",
-            rttMs = p.rttMs,
-            secret = p.secret,
-            tlsDomain = tls?.takeIf { it.isNotEmpty() },
-            port = p.port,
-            lastErrorShort = p.lastError?.takeIf { it.isNotBlank() }?.let { if (it.length > 40) it.substring(0, 39) + "…" else it },
-        )
+        // Global (mode-agnostic) list, built with the same single-query builder
+        // and speed ranking as the per-mode tabs.
+        _catalog.value = try { buildCatalog(NetworkMode.UNKNOWN.code) } catch (_: Throwable) { _catalog.value }
     }
 
     private fun refreshSources() {
@@ -1465,5 +1491,5 @@ class AndroidEngine(context: Context) : Engine {
         }
     }
 
-    private fun rate(bps: Long) = "${TrafficMeter.human(bps)}/с"
+    private fun rate(bps: Long) = "${TrafficMeter.human(bps)}/s"
 }

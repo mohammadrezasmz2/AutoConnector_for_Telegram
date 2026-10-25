@@ -71,6 +71,9 @@ public final class RelayConnection implements Runnable {
     private static final java.util.concurrent.ConcurrentHashMap<Long, Long> FAIL_AT =
             new java.util.concurrent.ConcurrentHashMap<>();
     private static final long FAIL_DEBOUNCE_MS = 8_000L;
+    /** Rate-limit for the "speed-first" choice log line. */
+    private static final java.util.concurrent.atomic.AtomicLong SPEED_LOG_AT =
+            new java.util.concurrent.atomic.AtomicLong();
 
     private final Socket tg;
     private final int localPort;
@@ -120,8 +123,14 @@ public final class RelayConnection implements Runnable {
         boolean onlyFakeTls = prefs.onlyFakeTls();
         // Experimental upstream engine (OFF → reference path, bit-identical).
         WireShaper.Mode expEngine = WireShaper.Mode.fromCode(prefs.expEngineMode());
-        // Experimental connect strategy (OFF → serial 8s, reference).
-        RelayConnectMode connMode = RelayConnectMode.fromCode(prefs.relayConnectMode());
+        // Connect strategy (OFF → serial 8s, reference). Smart auto-tune, when on,
+        // supplies its live-tuned strategy / race width / breadth / timeout.
+        RelayConnectMode connMode = RelayConnectMode.fromCode(
+                AutoTuner.connectMode(prefs.relayConnectMode()));
+        final boolean speedFirst = prefs.speedPriority();
+        final int raceWidthNow = AutoTuner.raceWidth(prefs.relayRaceWidth());
+        final int breadthNow = AutoTuner.breadth(prefs.relayBreadth());
+        final int timeoutNow = AutoTuner.timeoutMs(prefs.relayConnectTimeoutMs());
         try {
             tg.setSoTimeout(HANDSHAKE_TIMEOUT_MS);
             InputStream tgIn = tg.getInputStream();
@@ -152,7 +161,7 @@ public final class RelayConnection implements Runnable {
 
             // 1. SOCKS5 handshake — learn the DC endpoint Telegram wants.
             Socks5Server.Target dst = Socks5Server.handshake(tgIn, tgOut);
-            RelayLog.emit("↪ Telegram открыл сокет на порту " + localPort
+            RelayLog.emit("↪ Telegram opened a socket on port " + localPort
                     + " → " + dst.host + ":" + dst.port);
 
             manager.onConnection(localPort);
@@ -185,13 +194,13 @@ public final class RelayConnection implements Runnable {
                 // must NEVER tear this connection down — Telegram would instantly
                 // flag the proxy as broken and disable it. Treat it as a cold pool
                 // and pass straight through, which keeps the proxy enabled.
-                RelayLog.emit("⚠ БД на миг недоступна — Telegram идёт напрямую к DC "
-                        + "(прокси не отключаем)");
+                RelayLog.emit("⚠ database briefly unavailable — Telegram goes directly to the DC "
+                        + "(the proxy stays enabled)");
                 aliveNow = 0;
             }
             if (aliveNow == 0) {
-                RelayLog.emit("⚠ живых прокси пока нет — Telegram идёт напрямую к DC "
-                        + "(чтобы Telegram не отключил прокси); идёт набор пула…");
+                RelayLog.emit("⚠ no live proxies yet — Telegram goes directly to the DC "
+                        + "(so Telegram does not disable the proxy); building the pool…");
                 acceptingDecremented = true;  // see note above — avoid double-decrement
                 handleBypassRaw(tg, tgIn, tgOut, dst, prefs.dpiApplyDirect());
                 return;
@@ -219,7 +228,7 @@ public final class RelayConnection implements Runnable {
             // 3b. Otherwise connect normally.
             if (up == null) {
                 up = acquireUpstream(tag, dcId, dst, handshakeMode, onlyFakeTls, expEngine, connMode,
-                        prefs.relayRaceWidth(), prefs.relayBreadth(), prefs.relayConnectTimeoutMs());
+                        raceWidthNow, breadthNow, timeoutNow, speedFirst);
             }
             // If the chosen proxying engine failed EVERY upstream handshake (common
             // on Windows with «нет»/«сплит» — immediate/fragmented first send), retry
@@ -230,11 +239,11 @@ public final class RelayConnection implements Runnable {
             // regardless of the user's chosen default. Candidate pool is cached, so
             // the retry only re-does the handshake, not the DB queries.
             if (up == null && expEngine != WireShaper.Mode.COALESCE_DELAY) {
-                RelayLog.emit("↻ ни один апстрим не принял handshake (" + expEngine.key
-                        + ") — повторяю с коалесингом");
+                RelayLog.emit("↻ no upstream accepted the handshake (" + expEngine.key
+                        + ") — retrying with coalescing");
                 up = acquireUpstream(tag, dcId, dst, handshakeMode, onlyFakeTls,
                         WireShaper.Mode.COALESCE_DELAY, connMode,
-                        prefs.relayRaceWidth(), prefs.relayBreadth(), prefs.relayConnectTimeoutMs());
+                        raceWidthNow, breadthNow, timeoutNow, speedFirst);
             }
             if (up == null) {
                 // No upstream took the connection — DON'T drop it (that disables the
@@ -242,9 +251,9 @@ public final class RelayConnection implements Runnable {
                 // obfuscated2-init that local.accept() already consumed so the DC
                 // sees the full MTProto handshake. The next connection self-heals
                 // through a live upstream as soon as one is available.
-                listener.event("порт " + localPort + ": нет рабочего апстрима (DC" + dcId
-                        + ") — прямой проход, чтобы Telegram не выключил прокси");
-                RelayLog.emit("→ прямой проход на DC" + dcId + " (нет рабочего апстрима; прокси оставляем включённым)");
+                listener.event("port " + localPort + ": no working upstream (DC" + dcId
+                        + ") — passing through directly so Telegram does not disable the proxy");
+                RelayLog.emit("→ direct pass-through to DC" + dcId + " (no working upstream; the proxy stays enabled)");
                 acceptingDecremented = true;  // handleBypassRaw owns the single decrement
                 java.io.InputStream bypassIn = new java.io.SequenceInputStream(
                         new java.io.ByteArrayInputStream(rec.recorded()), tgIn);
@@ -280,7 +289,7 @@ public final class RelayConnection implements Runnable {
                 else if (localPort == manager.portB) prefs.setLastTelegramConnectPortB(now);
             }
             RelayLog.emit("→ " + upstreamProxy.host + ":" + upstreamProxy.port
-                    + " (порт " + localPort + ", DC" + dcId
+                    + " (port " + localPort + ", DC" + dcId
                     + ", " + (upstreamProxy.type == ProxyType.MTPROTO ? "MT" : "S5") + ")");
 
             tg.setSoTimeout(PIPE_IDLE_TIMEOUT_MS);
@@ -308,6 +317,7 @@ public final class RelayConnection implements Runnable {
                     upstreamProxy.type == ProxyType.MTPROTO,
                     upstreamProxy.rttMs, sni, srcNum);
             liveConn.fromPrewarm = fromPrewarm;
+            liveConn.upstreamEntry = upstreamProxy;
             liveConnRef = liveConn;
             liveConnRefForLatency = liveConn;
             // Seed the relay-ping graph with this upstream's TCP-connect RTT — a
@@ -325,7 +335,7 @@ public final class RelayConnection implements Runnable {
             HandshakeStats.recordTgConnected(up.handshakeMode);
             RelayStats.accepting.decrementAndGet();
             acceptingDecremented = true;
-            listener.event("порт " + localPort + " → "
+            listener.event("port " + localPort + " → "
                     + upstreamProxy.host + ":" + upstreamProxy.port + " (DC" + dcId + ")");
 
             // Diagnostic net-log (metadata only; no-op unless the user enabled it).
@@ -402,9 +412,15 @@ public final class RelayConnection implements Runnable {
                     long activeMs = (first > 0 && last > first) ? last - first : 0;
                     HandshakeStats.recordSessionEnd(up.handshakeMode, dur, bytes, activeMs);
                 }
+                String spd = "";
+                if (liveConnRef != null && liveConnRef.meter.peakKbps > 0) {
+                    spd = " · ↓ peak " + AutoTuner.fmtKbps(liveConnRef.meter.peakKbps);
+                }
                 RelayLog.emit("⨂ " + upstreamProxy.host + ":" + upstreamProxy.port
-                        + " — сессия закрыта, длилась "
-                        + io.autoconnector.engine.core.Durations.human(dur / 1000));
+                        + " — session closed after "
+                        + io.autoconnector.engine.core.Durations.human(dur / 1000) + spd
+                        + (liveConnRef != null && liveConnRef.killReason != null
+                            ? " (" + liveConnRef.killReason + ")" : ""));
                 long upB = (liveConnRef != null) ? liveConnRef.bytesUp.get() : 0;
                 long downB = (liveConnRef != null) ? liveConnRef.bytesDown.get() : 0;
                 NetLog.close(sess(), "durMs=" + dur + " up=" + upB + " down=" + downB);
@@ -440,7 +456,7 @@ public final class RelayConnection implements Runnable {
             String host = dst.host;
             int port = dst.port;
             if (host == null || host.isEmpty()) {
-                RelayLog.emit("✗ прямой выход: SOCKS5-цель пуста");
+                RelayLog.emit("✗ direct mode: the SOCKS5 target is empty");
                 return;
             }
             direct = new Socket();
@@ -452,9 +468,9 @@ public final class RelayConnection implements Runnable {
             upSocket = direct;
 
             int dcId = DcAddresses.dcIdForIp(host);
-            RelayLog.emit("→ " + host + ":" + port + " (порт " + localPort
-                    + ", прямой выход, DC" + dcId
-                    + (antiDpi ? ", анти-DPI: фрагментация" : "") + ")");
+            RelayLog.emit("→ " + host + ":" + port + " (port " + localPort
+                    + ", direct, DC" + dcId
+                    + (antiDpi ? ", anti-DPI: fragmentation" : "") + ")");
             NetLog.open(sess(),
                     "net=" + io.autoconnector.engine.core.NetworkMonitor.currentMode()
                     + " eng=direct" + (antiDpi ? "+frag" : "")
@@ -489,7 +505,7 @@ public final class RelayConnection implements Runnable {
                 closeBoth();
             }
         } catch (Exception e) {
-            RelayLog.emit("✗ прямой выход " + dst.host + ":" + dst.port + ": "
+            RelayLog.emit("✗ direct " + dst.host + ":" + dst.port + ": "
                     + (e.getMessage() != null ? e.getMessage()
                                               : e.getClass().getSimpleName()));
         } finally {
@@ -583,7 +599,8 @@ public final class RelayConnection implements Runnable {
                                                       RelayConnectMode connMode,
                                                       int raceWidth,
                                                       int breadth,
-                                                      int connectTimeoutMs) {
+                                                      int connectTimeoutMs,
+                                                      boolean speedFirst) {
         int multi = onlyFakeTls ? 4 : 1;
         io.autoconnector.engine.core.NetworkMode net =
                 io.autoconnector.engine.core.NetworkMonitor.currentMode();
@@ -667,7 +684,7 @@ public final class RelayConnection implements Runnable {
 
         // Working copy (never mutate the shared cache): sticky upstream (per-port,
         // in-memory — no DB) first unless widening, then the cached pool.
-        List<ProxyEntry> candidates = new ArrayList<>(pool.size() + 1);
+        List<ProxyEntry> candidates = new ArrayList<>(pool.size() + 8);
         if (!bouncing && b < 70) {
             ProxyEntry sticky = manager.stickyUpstream(localPort);
             if (sticky != null && (!onlyFakeTls || sticky.isFakeTls())
@@ -675,45 +692,108 @@ public final class RelayConnection implements Runnable {
         }
         for (ProxyEntry p : pool) if (!containsId(candidates, p.id)) candidates.add(p);
 
-        if (bouncing) {
-            RelayLog.emit("⟳ Telegram мечется по портам — расширяю выбор до "
-                    + candidates.size() + " разных живых хостов");
-        }
-        // For wide breadth / bouncing, shuffle so the race AND the serial trial
-        // pull from across the whole varied pool, not just the top of the list.
-        if (bouncing || b >= 50) java.util.Collections.shuffle(candidates);
+        // The user-pinned host (catalog «use in relay») always goes first and is
+        // never shuffled away — previously wide breadth silently ignored the pin.
+        ProxyEntry pin = manager.pinnedEntry();
+        if (pin != null && onlyFakeTls && !pin.isFakeTls()) pin = null;
 
-        // Pick the connect strategy. OFF is the reference serial trial; the
-        // others are experimental and aim to cut "very long to find a link".
-        UpstreamConnector.Channel ch;
-        switch (connMode) {
-            case PARALLEL_RACE:
-                ch = tryRace(candidates, tag, dcId, dst, mode, exp,
-                        raceWidth, connectTimeoutMs);
-                break;
-            case FAST_TIMEOUT:
-                ch = trySerial(candidates, tag, dcId, dst, mode, exp,
-                        RelayConnectMode.FAST_TIMEOUT_MS);
-                break;
-            case STICKY_FIRST:
-                ch = tryStickyFirst(candidates, tag, dcId, dst, mode, exp);
-                break;
-            case OFF:
-            default:
-                // Spread repeated Telegram connects across DIFFERENT alive hosts
-                // instead of always re-using the sticky/top one. Otherwise a
-                // couple of high-rated hosts win every connection, their rating
-                // climbs unbeatably (rich-get-richer), and the rest of the live
-                // pool never gets used. Every candidate is already alive-verified,
-                // so randomising order costs no reliability, just balances usage.
-                java.util.Collections.shuffle(candidates);
-                ch = trySerial(candidates, tag, dcId, dst, mode, exp, connectTimeoutMs);
-                break;
+        List<ProxyEntry> fastHead = java.util.Collections.emptyList();
+        if (speedFirst) {
+            // Bring in the proven-FAST hosts of this network even if the score-
+            // based pool didn't pick them, then drop anything on cooldown.
+            for (ProxyEntry p : SpeedBoard.topFast(fnet, 6, SpeedBoard.SLOW_KBPS)) {
+                if (onlyFakeTls && !p.isFakeTls()) continue;
+                if (!containsId(candidates, p.id)) candidates.add(p);
+            }
+            java.util.List<Long> ids = new ArrayList<>(candidates.size());
+            for (ProxyEntry p : candidates) ids.add(p.id);
+            java.util.Set<Long> cooled;
+            try { cooled = store.cooledAmong(ids); } catch (Exception e) { cooled = java.util.Collections.emptySet(); }
+            if (!cooled.isEmpty() && cooled.size() < candidates.size()) {
+                List<ProxyEntry> keep = new ArrayList<>(candidates.size());
+                for (ProxyEntry p : candidates) if (!cooled.contains(p.id)) keep.add(p);
+                candidates = keep;
+            }
+            // Unmeasured hosts keep a randomised order (fair exploration); measured
+            // ones are ranked by the real download speed they delivered.
+            if (bouncing || b >= 50) java.util.Collections.shuffle(candidates);
+            SpeedBoard.Ordering o = SpeedBoard.order(candidates, fnet, AutoTuner.exploreRate());
+            candidates = o.ordered;
+            fastHead = o.fastHead;
+            // Telegram opens many sockets at once — log the choice at most every 30 s.
+            long nowLog = System.currentTimeMillis();
+            long prevLog = SPEED_LOG_AT.get();
+            if (nowLog - prevLog > 30_000L && SPEED_LOG_AT.compareAndSet(prevLog, nowLog)) {
+                if (!fastHead.isEmpty()) {
+                    RelayLog.emit("⚡ speed-first: " + fastHead.size() + " proven-fast host(s) first, best "
+                            + AutoTuner.fmtKbps(SpeedBoard.effectiveKbps(fastHead.get(0).id, fnet)));
+                } else if (o.exploring) {
+                    RelayLog.emit("🔎 speed-first: exploring unmeasured hosts to learn their speed");
+                }
+            }
+        } else {
+            // Legacy behaviour: shuffle for wide breadth / bouncing.
+            if (bouncing || b >= 50) java.util.Collections.shuffle(candidates);
+        }
+        if (pin != null) {
+            final long pinId = pin.id;
+            candidates.removeIf(p -> p.id == pinId);
+            candidates.add(0, pin);
+        }
+
+        if (bouncing) {
+            RelayLog.emit("⟳ Telegram keeps switching relay ports — widening the choice to "
+                    + candidates.size() + " different live hosts");
+        }
+
+        UpstreamConnector.Channel ch = null;
+        List<ProxyEntry> rest = candidates;
+        // 1. Pinned host: full timeout, on its own.
+        if (pin != null) {
+            ch = trySerial(java.util.Collections.singletonList(pin), tag, dcId, dst, mode, exp,
+                    Math.max(connectTimeoutMs, 4000));
+            rest = candidates.subList(1, candidates.size());
+        }
+        // 2. Fast lane: race only the proven-fast hosts with a short budget, so a
+        //    quick-to-handshake but slow-to-download host can't steal the slot.
+        if (ch == null && !fastHead.isEmpty() && pin == null) {
+            ch = tryRace(fastHead, tag, dcId, dst, mode, exp, fastHead.size(),
+                    Math.min(connectTimeoutMs, 4000), false);
+            List<ProxyEntry> r2 = new ArrayList<>(rest.size());
+            for (ProxyEntry p : rest) if (!containsId(fastHead, p.id)) r2.add(p);
+            rest = r2;
+        }
+        // 3. Everyone else, with the chosen connect strategy.
+        if (ch == null && !rest.isEmpty()) {
+            switch (connMode) {
+                case PARALLEL_RACE:
+                    ch = tryRace(rest, tag, dcId, dst, mode, exp,
+                            raceWidth, connectTimeoutMs, true);
+                    break;
+                case FAST_TIMEOUT:
+                    ch = trySerial(rest, tag, dcId, dst, mode, exp,
+                            RelayConnectMode.FAST_TIMEOUT_MS);
+                    break;
+                case STICKY_FIRST:
+                    ch = tryStickyFirst(rest, tag, dcId, dst, mode, exp);
+                    break;
+                case OFF:
+                default:
+                    // Spread repeated Telegram connects across different alive hosts
+                    // (legacy). With speed-first the order is already ranked, so
+                    // keep it.
+                    if (!speedFirst) {
+                        rest = new ArrayList<>(rest);
+                        java.util.Collections.shuffle(rest);
+                    }
+                    ch = trySerial(rest, tag, dcId, dst, mode, exp, connectTimeoutMs);
+                    break;
+            }
         }
         // Cascade — nobody took the connection though we had candidates. Wake
         // up the wider check in the background so the next retry has fresh data.
         if (ch == null && !candidates.isEmpty()) {
-            RelayLog.emit("⚠ кандидаты не дали апстрим — запускаю расширенную проверку в фоне");
+            RelayLog.emit("⚠ no candidate accepted the connection — starting a wider background check");
             triggerWiderCheck();
         }
         return ch;
@@ -725,9 +805,13 @@ public final class RelayConnection implements Runnable {
                                                 WireShaper.Mode exp, int timeoutMs) {
         for (ProxyEntry p : candidates) {
             try {
-                return UpstreamConnector.connect(
+                UpstreamConnector.Channel c = UpstreamConnector.connect(
                         p, tag, dcId, dst.host, dst.port, timeoutMs, mode, exp);
+                AutoTuner.onConnect(true, c.totalMs);
+                return c;
             } catch (Exception e) {
+                AutoTuner.onConnect(false, 0);
+                SpeedBoard.connectFailed(p, io.autoconnector.engine.core.NetworkMonitor.currentMode());
                 manager.markUpstreamBad(localPort, p);
                 logFailedAttempt(p.id);
                 String why = e.getMessage() != null
@@ -748,7 +832,8 @@ public final class RelayConnection implements Runnable {
      */
     private UpstreamConnector.Channel tryRace(List<ProxyEntry> candidates, int tag, int dcId,
                                               Socks5Server.Target dst, HandshakeMode mode,
-                                              WireShaper.Mode exp, int width, int timeoutMs) {
+                                              WireShaper.Mode exp, int width, int timeoutMs,
+                                              boolean serialFallback) {
         if (candidates.isEmpty()) return null;
         int n = Math.min(width, candidates.size());
         final java.util.concurrent.atomic.AtomicReference<UpstreamConnector.Channel> winner =
@@ -762,12 +847,15 @@ public final class RelayConnection implements Runnable {
                 try {
                     UpstreamConnector.Channel c = UpstreamConnector.connect(
                             p, tag, dcId, dst.host, dst.port, timeoutMs, mode, exp);
+                    AutoTuner.onConnect(true, c.totalMs);
                     if (winner.compareAndSet(null, c)) {
                         done.countDown();                 // first finisher wins
                     } else {
                         closeQuietly(c.socket);           // lost the race — discard
                     }
                 } catch (Exception e) {
+                    AutoTuner.onConnect(false, 0);
+                    SpeedBoard.connectFailed(p, io.autoconnector.engine.core.NetworkMonitor.currentMode());
                     manager.markUpstreamBad(localPort, p);
                     logFailedAttempt(p.id);
                     String why = e.getMessage() != null
@@ -788,7 +876,7 @@ public final class RelayConnection implements Runnable {
         UpstreamConnector.Channel ch = winner.get();
         if (ch != null) return ch;
         // All racers failed — try the remaining candidates serially (rare).
-        if (candidates.size() > n) {
+        if (serialFallback && candidates.size() > n) {
             return trySerial(candidates.subList(n, candidates.size()), tag, dcId, dst, mode, exp, timeoutMs);
         }
         return null;
@@ -834,10 +922,10 @@ public final class RelayConnection implements Runnable {
                         store, RelayLog::emit, 16);
                 runner.runOn(store.top(150), "after-cascade");
                 if (manager != null) manager.refreshStickies();
-                RelayLog.emit("⟳ расширенная проверка завершена · живых: "
+                RelayLog.emit("⟳ wider check finished · live: "
                         + store.aliveCount());
             } catch (Throwable t) {
-                RelayLog.emit("расширенная проверка: " + t.getMessage());
+                RelayLog.emit("wider check: " + t.getMessage());
             }
         });
     }
@@ -903,6 +991,14 @@ public final class RelayConnection implements Runnable {
                     lc.lastDataAt.set(now);
                     lc.firstDataAt.compareAndSet(0L, now);
                     if (upDirection) {
+                        lc.firstUpAt.compareAndSet(0L, now);
+                        lc.upWritesSinceDown.incrementAndGet();
+                    } else {
+                        lc.lastDownAt.set(now);
+                        lc.upWritesSinceDown.set(0);
+                        lc.meter.onBytes(n, now);
+                    }
+                    if (upDirection) {
                         // Mark a write timestamp only if none is pending —
                         // pair the FIRST byte of a Telegram burst with the
                         // FIRST byte of the reply so the gap measures RTT,
@@ -927,14 +1023,31 @@ public final class RelayConnection implements Runnable {
                     flushBytesToProxy(accumForProxy);
                     accumForProxy = 0;
                     lastFlush = now;
+                    // Live speed sample for long downloads, so the ranking reacts
+                    // while the session is still running.
+                    if (!upDirection) recordSpeed(lc, now);
                 }
             }
         } catch (IOException ignored) {
             // peer closed or network dropped
         } finally {
             flushBytesToProxy(accumForProxy);
+            if (!upDirection) recordSpeed(liveConnRefForLatency, System.currentTimeMillis());
             closeBoth();
         }
+    }
+
+    /** Folds the connection's measured download speed into the SpeedBoard. Runs
+     *  on the down-pipe thread (the meter's owner). */
+    private void recordSpeed(RelayStats.LiveConn lc, long now) {
+        ProxyEntry p = upstreamProxy;
+        if (lc == null || p == null) return;
+        try {
+            double kbps = lc.meter.take(now);
+            if (kbps > 0) {
+                SpeedBoard.record(p, io.autoconnector.engine.core.NetworkMonitor.currentMode(), kbps);
+            }
+        } catch (Throwable ignored) {}
     }
 
     /** Records a failed real-Telegram relay attempt against the host: penalises

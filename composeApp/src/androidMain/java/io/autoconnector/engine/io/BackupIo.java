@@ -106,7 +106,7 @@ public final class BackupIo {
                         en.getValue() == null ? "" : en.getValue().toString());
             }
             int n = prefs.importSettings(sm);
-            done.add("настройки (" + n + ")");
+            done.add("settings (" + n + ")");
         }
 
         Object subList = root.get("subscriptions");
@@ -123,7 +123,7 @@ public final class BackupIo {
                 n++;
             }
             subsChanged = true;
-            done.add("подписки (" + n + ")");
+            done.add("subscriptions (" + n + ")");
         }
 
         Object hostList = root.get("hosts");
@@ -166,7 +166,7 @@ public final class BackupIo {
                 n++;
             }
             hostsChanged = true;
-            done.add("хосты (" + n + ")");
+            done.add("hosts (" + n + ")");
         }
 
         if (done.isEmpty()) return new ImportResult(null, false, false);
