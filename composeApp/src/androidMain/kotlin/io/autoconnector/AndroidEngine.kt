@@ -1622,12 +1622,12 @@ class AndroidEngine(context: Context) : Engine {
     private val subsLog = ArrayDeque<LogLine>()
     private val scanLog = ArrayDeque<LogLine>()
 
-    @Synchronized
     // Full history for the "export & share log" file — far larger than the
     // per-tab UI buffers, oldest first.
     private val exportLog = ArrayDeque<String>()
     private val exportFmt = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US)
 
+    @Synchronized
     private fun appendLog(line: String, cat: LogCat = LogCat.OTHER, session: String? = null) {
         val entry = LogLine(line, classify(line), cat, session, ts = System.currentTimeMillis())
         synchronized(exportLog) {
