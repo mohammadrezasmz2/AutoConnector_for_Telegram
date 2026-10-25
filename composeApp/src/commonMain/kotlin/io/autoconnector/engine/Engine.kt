@@ -96,6 +96,8 @@ data class CatalogItem(
     val speedAgeSec: Long = -1,
     // True while this host is carrying Telegram traffic right now (speed shown live).
     val liveSpeed: Boolean = false,
+    // 1..5 = this host is in the relay's reserve list (fastest measured backups).
+    val reserveRank: Int = 0,
 )
 
 data class SourceItem(
@@ -431,6 +433,11 @@ data class EngineState(
     val scanNowThreads: Int = 0,        // probes in flight this instant
     val scanNowBatch: Int = 0,          // size of the pass running right now
     val scanNowSeconds: Long = 0,       // how long the current pass has run
+    val scanNowDone: Int = 0,           // probes finished in the current run
+    val scanNowOk: Int = 0,             // … of which answered (live)
+    val scanNowTotal: Int = 0,          // probes queued in the current run
+    val scanBacklog: Int = 0,           // hosts never checked yet
+    val scanNextSec: Int = -1,          // seconds until the next pass (-1 = unknown)
 
     // Per-network-mode view: the relay rates proxies separately for each network
     // transport (VPN / Wi-Fi / LTE / WhitePages); these reflect the ACTIVE one.

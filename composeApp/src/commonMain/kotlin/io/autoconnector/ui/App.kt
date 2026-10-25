@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -355,7 +357,7 @@ private fun TitleRow(langCode: String, onOpenGuide: () -> Unit = {}, onPickLang:
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "AutoConnector for Telegram",
+            "AutoConnector",
             fontWeight = FontWeight.Bold,
             fontSize = 19.sp,
             color = AppColors.onSurface,
@@ -522,12 +524,67 @@ private fun PoolLine(s: EngineState) {
             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 2.dp),
         )
     } else {
+        // Numbers roll to their new value so the counters visibly move while
+        // the scan finds and re-checks hosts.
+        val alive by androidx.compose.animation.core.animateIntAsState(s.aliveCount, label = "alive")
+        val within by androidx.compose.animation.core.animateIntAsState(s.aliveWithin15, label = "within")
+        val total by androidx.compose.animation.core.animateIntAsState(s.totalCount, label = "total")
         Text(
-            tr.alivePool(s.aliveCount, s.aliveWithin15, s.totalCount),
+            tr.alivePool(alive, within, total),
             color = AppColors.onSurface,
             fontSize = 14.sp,
             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 2.dp),
         )
+    }
+    ScanPulseLine(s)
+}
+
+/** Live scan status under the pool counters: progress of the running pass
+ *  (checked / queued, how many answered, probes in flight, rate) or, between
+ *  passes, the countdown and how many hosts still wait for their first check. */
+@Composable
+private fun ScanPulseLine(s: EngineState) {
+    if (!s.scanEnabled) return
+    val tr = LocalStrings.current
+    val running = s.scanNowTotal > 0 && s.scanNowDone < s.scanNowTotal || s.scanNowThreads > 0
+    val perMin = s.checksOk60s + s.checksFail60s
+    Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 2.dp)) {
+        if (running) {
+            val done by androidx.compose.animation.core.animateIntAsState(s.scanNowDone, label = "done")
+            val ok by androidx.compose.animation.core.animateIntAsState(s.scanNowOk, label = "ok")
+            // Blinking dot = "working right now".
+            val blink = androidx.compose.animation.core.rememberInfiniteTransition(label = "blink")
+            val a by blink.animateFloat(
+                0.25f, 1f,
+                androidx.compose.animation.core.infiniteRepeatable(
+                    androidx.compose.animation.core.tween(600),
+                    androidx.compose.animation.core.RepeatMode.Reverse,
+                ),
+                label = "a",
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(AppColors.green.copy(alpha = a)))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    tr.scanPulseRunning(done, s.scanNowTotal, ok, s.scanNowThreads, perMin),
+                    color = AppColors.green, fontSize = 12.sp, maxLines = 2,
+                )
+            }
+            if (s.scanNowTotal > 0) {
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { (s.scanNowDone.toFloat() / s.scanNowTotal).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp).height(3.dp),
+                    color = AppColors.green,
+                    trackColor = AppColors.cardBorder,
+                )
+            }
+        } else {
+            Text(
+                tr.scanPulseIdle(s.scanNextSec, s.scanBacklog),
+                color = AppColors.onSurfaceMuted, fontSize = 12.sp,
+            )
+        }
     }
 }
 

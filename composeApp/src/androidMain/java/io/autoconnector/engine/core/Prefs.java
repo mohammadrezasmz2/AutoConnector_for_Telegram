@@ -226,7 +226,10 @@ public class Prefs {
         float mult = speedMultiplier(net);
         if (BurstMode.isActive()) return Math.min(mult, 0.25f);
         if (alive < adaptiveAliveThreshold()) mult *= fastSpeedMultiplier();
-        else if (alive > lazyAliveThreshold()) mult *= lazySpeedMultiplier();
+        // "Lazy" mode used to slow the scan 5× once 70+ hosts were alive, so
+        // new hosts went unchecked for ~25 min. The scan must keep picking the
+        // best hosts while it is on, so the slowdown is capped at 1.5×.
+        else if (alive > lazyAliveThreshold()) mult *= Math.min(lazySpeedMultiplier(), 1.5f);
         return mult;
     }
 

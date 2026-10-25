@@ -48,6 +48,9 @@ public final class StallWatchdog {
     private volatile boolean running = false;
     private Thread thread;
     private long prevDown = -1;
+    private long prevUp = -1;
+    private long lastReserveAt = 0;
+    private static final long TG_BUSY_BPS = 8L * 1024;
 
     public StallWatchdog(RelayManager manager, ProxyStore store) {
         this.manager = manager;
@@ -86,11 +89,15 @@ public final class StallWatchdog {
         long down = RelayStats.bytesDown.get();
         long bps = prevDown < 0 ? 0 : Math.max(0, down - prevDown);
         prevDown = down;
+        long upNow = RelayStats.bytesUp.get();
+        long upBps = prevUp < 0 ? 0 : Math.max(0, upNow - prevUp);
+        prevUp = upNow;
 
-        boolean tgActive = false;
+        // "Telegram is busy" = a real transfer right now (≥ 8 KB/s either way).
+        // Telegram's idle pings and chat updates are far below that, so the scan
+        // is no longer throttled the whole time Telegram is merely open.
+        boolean tgActive = bps >= TG_BUSY_BPS || upBps >= TG_BUSY_BPS;
         for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
-            // Telegram moved data through the relay just now (either direction).
-            if (now - c.lastDataAt.get() < 3_000L && c.bytesUp.get() + c.bytesDown.get() > 0) tgActive = true;
             if (!guardEnabled) continue;
             if (c.upstreamProxyId <= 0 || c.killer == null || c.killReason != null) continue;
             if (manager.isPinned(c.upstreamProxyId)) continue;   // user forced this host
@@ -111,6 +118,11 @@ public final class StallWatchdog {
         }
         TrafficGovernor.tick(bps, tgActive);
         if (guardEnabled) checkSlowActive(now);
+        if (now - lastReserveAt >= 5_000L) {
+            lastReserveAt = now;
+            try { manager.refreshReserves(now); } catch (Throwable ignored) {}
+            try { manager.considerUpgrade(now); } catch (Throwable ignored) {}
+        }
         AutoTuner.tick(manager.isPortBouncing());
     }
 

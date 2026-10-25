@@ -405,6 +405,16 @@ private fun CatalogTile(
             if (p.activeInRelay) {
                 Text("★", color = AppColors.green, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 Spacer(Modifier.width(6.dp))
+            } else if (p.reserveRank > 0) {
+                // Reserve (backup) host: R1 = first to take over.
+                Text(
+                    t.reserveShort + p.reserveRank,
+                    color = AppColors.blue, fontWeight = FontWeight.Bold, fontSize = 12.sp,
+                    modifier = Modifier.clip(RoundedCornerShape(5.dp))
+                        .background(AppColors.blue.copy(alpha = 0.15f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                )
+                Spacer(Modifier.width(6.dp))
             }
             if (p.alive) Text(t.aliveShort, color = AppColors.green, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             else Text(t.deadShort, color = AppColors.red, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -575,6 +585,9 @@ fun CatalogDetailPage(
                         }
                         if (p.activeInRelay) {
                             DetailRow(Icons.Filled.Bolt, t.relayNow, t.activeInRelayWord, AppColors.green)
+                        }
+                        if (p.reserveRank > 0) {
+                            DetailRow(Icons.Filled.Bolt, t.reserveField, t.reserveRankText(p.reserveRank), AppColors.blue)
                         }
                         if (p.coolingDown) {
                             DetailRow(Icons.Filled.Schedule, t.statusLabel, t.coolingDownWord, AppColors.amber)

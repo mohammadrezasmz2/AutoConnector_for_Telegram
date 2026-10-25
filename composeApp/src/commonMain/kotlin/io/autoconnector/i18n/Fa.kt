@@ -489,6 +489,13 @@ object Fa : Strings {
     override val measuredDown = "دانلود"
     override val measuredUp = "آپلود"
     override val measuredBoth = "دانلود/آپلود"
+    override fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int) =
+        "در حال بررسی $done از $total · $ok جواب داد · $threads همزمان · $perMin در دقیقه"
+    override fun scanPulseIdle(nextSec: Int, backlog: Int) =
+        (if (nextSec >= 0) "بررسی بعدی تا $nextSec ثانیه" else "اسکن در انتظار") +
+            (if (backlog > 0) " · $backlog پروکسی جدید هنوز بررسی نشده" else " · همه بررسی شده‌اند")
+    override val reserveField = "رزرو"
+    override fun reserveRankText(n: Int) = "پشتیبان شماره $n — اگر پروکسی فعال خراب یا کندتر شد جایش را می‌گیرد"
     override val qrTitle = "بارکد (QR) پروکسی"
     override val qrShare = "اشتراک بارکد"
     override val qrHint = "با دوربین یا تلگرامِ گوشی دیگر اسکن کنید تا این پروکسی اضافه شود."

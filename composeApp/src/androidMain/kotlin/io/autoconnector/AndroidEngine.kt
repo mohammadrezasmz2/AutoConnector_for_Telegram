@@ -705,6 +705,7 @@ class AndroidEngine(context: Context) : Engine {
         val sticky = RelayManager.currentStickyProxyIds()
         val pinnedId = RelayManager.currentPinnedId()
         val activeId = RelayManager.currentActiveId()
+        val reserveIds = RelayManager.reserveIds()
         // Speeds are recorded under the network mode they were measured on; the
         // global (auto) view shows the speeds of the network we're on right now.
         val speedMode = if (mode == NetworkMode.UNKNOWN) NetworkMonitor.currentMode() else mode
@@ -725,6 +726,8 @@ class AndroidEngine(context: Context) : Engine {
         val items = rows.map { r ->
             catalogItemOf(r, speedMode, now, nums, liveIds, sticky, pinnedId).let {
                 var item = if (it.id == activeId) it.copy(activeInRelay = true) else it
+                val ri = reserveIds.indexOf(item.id)
+                if (ri >= 0) item = item.copy(reserveRank = ri + 1)
                 // Carrying Telegram right now and not measured yet → show the live rate.
                 val lr = live[item.id]
                 if (lr != null) {
@@ -1477,6 +1480,13 @@ class AndroidEngine(context: Context) : Engine {
             scanNowBatch = io.autoconnector.engine.core.ScanProgress.currentBatch(),
             scanNowSeconds = io.autoconnector.engine.core.ScanProgress.startedAtMs().let {
                 if (it > 0) ((now - it) / 1000L).coerceAtLeast(0L) else 0L
+            },
+            scanNowDone = io.autoconnector.engine.core.ScanProgress.done(),
+            scanNowOk = io.autoconnector.engine.core.ScanProgress.ok(),
+            scanNowTotal = io.autoconnector.engine.core.ScanProgress.total(),
+            scanBacklog = try { store.uncheckedCount() } catch (_: Throwable) { 0 },
+            scanNextSec = io.autoconnector.engine.core.ScanProgress.nextPassAtMs().let {
+                if (it > 0) ((it - now) / 1000L).coerceAtLeast(0L).toInt() else -1
             },
         )
     }

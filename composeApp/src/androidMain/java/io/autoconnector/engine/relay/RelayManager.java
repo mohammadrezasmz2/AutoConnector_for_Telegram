@@ -166,6 +166,170 @@ public final class RelayManager {
         return true;
     }
 
+    // --- Reserve list · speed scouting · automatic upgrade ----------------------
+    //
+    // Speeds are only known for hosts that carried real Telegram traffic, and with
+    // session affinity every socket goes to the active host — so before, only ONE
+    // host ever got measured. Now:
+    //  * SCOUTING: once the active host is settled, every 3rd new Telegram socket
+    //    goes to a candidate (a top-rated host not measured yet, or a reserve whose
+    //    number is getting old) so its real speed gets measured. If the candidate
+    //    doesn't answer within 2.5 s the socket falls back to the active host.
+    //  * RESERVES: the fastest measured hosts (up to RESERVE_MAX) are kept ready;
+    //    when the active host fails, the election tries them first.
+    //  * UPGRADE: if a reserve is clearly faster than the active host
+    //    (≥ 1.4× and ≥ +40 KB/s, measured recently), it becomes the active host
+    //    automatically; the previous one stays in the reserve list.
+
+    public static final int RESERVE_MAX = 5;
+    private static final long SCOUT_REPEAT_MS = 10 * 60_000L;
+    private static final long UPGRADE_GAP_MS = 60_000L;
+    private volatile List<ProxyEntry> reserves = java.util.Collections.emptyList();
+    private volatile List<ProxyEntry> scoutQueue = java.util.Collections.emptyList();
+    private final java.util.concurrent.ConcurrentHashMap<Long, Long> scoutedAt =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicInteger scoutTick =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile long lastUpgradeAt = 0;
+    private volatile String lastReserveSig = "";
+
+    /** Reserve hosts, fastest first (never includes the active host). */
+    public List<ProxyEntry> reserveEntries() { return reserves; }
+
+    /** Reserve ids in order, for the UI (empty when the relay is off). */
+    public static List<Long> reserveIds() {
+        RelayManager m = INSTANCE;
+        List<Long> out = new java.util.ArrayList<>();
+        if (m == null) return out;
+        for (ProxyEntry p : m.reserves) out.add(p.id);
+        return out;
+    }
+
+    /** Rebuilds the reserve list and the scouting queue (watchdog, every 5 s). */
+    public void refreshReserves(long now) {
+        io.autoconnector.engine.core.NetworkMode mode =
+                io.autoconnector.engine.core.NetworkMonitor.currentMode();
+        String m = mode.code;
+        ProxyEntry act = active;
+        long actId = act != null ? act.id : 0;
+        // Reserves: measured on this network in the last hour, not slow.
+        List<SpeedBoard.Stat> fast = new java.util.ArrayList<>();
+        for (SpeedBoard.Stat st : SpeedBoard.snapshot()) {
+            if (!st.mode.equals(m) || st.proxyId == actId || st.samples <= 0) continue;
+            if (now - st.lastAt > 60 * 60_000L) continue;
+            if (st.effective(now) < SpeedBoard.SLOW_KBPS) continue;
+            fast.add(st);
+        }
+        fast.sort((a, b) -> Double.compare(b.effective(now), a.effective(now)));
+        List<Long> ids = new java.util.ArrayList<>();
+        for (SpeedBoard.Stat st : fast) {
+            ids.add(st.proxyId);
+            if (ids.size() >= RESERVE_MAX * 2) break;
+        }
+        List<ProxyEntry> res = new java.util.ArrayList<>();
+        if (!ids.isEmpty()) {
+            Set<Long> cooled = new HashSet<>();
+            try { cooled = store.cooledAmong(ids); } catch (Throwable ignored) {}
+            java.util.Map<Long, ProxyEntry> byId = new java.util.HashMap<>();
+            try { for (ProxyEntry p : store.proxiesByIds(ids)) byId.put(p.id, p); } catch (Throwable ignored) {}
+            for (Long id : ids) {
+                ProxyEntry p = byId.get(id);
+                if (p == null || cooled.contains(id)) continue;
+                res.add(p);
+                if (res.size() >= RESERVE_MAX) break;
+            }
+        }
+        reserves = res;
+        StringBuilder sig = new StringBuilder();
+        for (ProxyEntry p : res) sig.append(p.id).append(',');
+        if (!sig.toString().equals(lastReserveSig)) {
+            lastReserveSig = sig.toString();
+            if (!res.isEmpty()) {
+                StringBuilder sb = new StringBuilder("⛁ reserve (" + res.size() + "): ");
+                for (int i = 0; i < res.size(); i++) {
+                    ProxyEntry p = res.get(i);
+                    if (i > 0) sb.append(" · ");
+                    sb.append(p.host).append(' ')
+                            .append(AutoTuner.fmtKbps(SpeedBoard.effectiveKbps(p.id, mode)));
+                }
+                RelayLog.emit(sb.toString());
+            }
+        }
+        // Scouting queue: stale reserves first, then top-rated hosts never
+        // measured on this network.
+        List<ProxyEntry> q = new java.util.ArrayList<>();
+        for (ProxyEntry p : res) {
+            SpeedBoard.Stat st = SpeedBoard.get(p.id, mode);
+            if (st != null && now - st.lastAt > 15 * 60_000L) q.add(p);
+        }
+        try {
+            List<ProxyEntry> top = mode != io.autoconnector.engine.core.NetworkMode.UNKNOWN
+                    ? store.topAliveForMode(mode, 40) : store.topAlive(40);
+            for (ProxyEntry p : top) {
+                if (p.id == actId) continue;
+                SpeedBoard.Stat st = SpeedBoard.get(p.id, mode);
+                if (st != null && st.samples > 0) continue;
+                q.add(p);
+                if (q.size() >= 12) break;
+            }
+        } catch (Throwable ignored) {}
+        scoutQueue = q;
+    }
+
+    /**
+     * Candidate host for this new Telegram socket to measure, or null to use the
+     * active host as usual. Every 3rd socket, once the active host is settled.
+     */
+    public ProxyEntry nextScout() {
+        ProxyEntry act = active;
+        if (act == null || pinned != null || !AutoTuner.isEnabled()) return null;
+        long now = System.currentTimeMillis();
+        if (now - activeSince < 15_000L) return null;
+        if (scoutTick.incrementAndGet() % 3 != 0) return null;
+        for (ProxyEntry p : scoutQueue) {
+            if (p.id == act.id) continue;
+            Long at = scoutedAt.get(p.id);
+            if (at != null && now - at < SCOUT_REPEAT_MS) continue;
+            scoutedAt.put(p.id, now);
+            return p;
+        }
+        return null;
+    }
+
+    /** Switches to a reserve that is clearly faster than the active host. */
+    public void considerUpgrade(long now) {
+        ProxyEntry act = active;
+        if (act == null || pinned != null || !AutoTuner.isEnabled()) return;
+        if (now - activeSince < 30_000L || now - lastUpgradeAt < UPGRADE_GAP_MS) return;
+        io.autoconnector.engine.core.NetworkMode mode =
+                io.autoconnector.engine.core.NetworkMonitor.currentMode();
+        SpeedBoard.Stat a = SpeedBoard.get(act.id, mode);
+        if (a == null || a.samples <= 0) return;       // active not measured yet
+        double ea = a.effective(now);
+        for (ProxyEntry r : reserves) {
+            SpeedBoard.Stat s = SpeedBoard.get(r.id, mode);
+            if (s == null || s.samples <= 0) continue;
+            // Proven: a sustained sample this session, or several samples lately.
+            boolean proven = (s.lastSampleAt > 0 && now - s.lastSampleAt < 30 * 60_000L)
+                    || (s.samples >= 3 && now - s.lastAt < 30 * 60_000L);
+            if (!proven) continue;
+            double er = s.effective(now);
+            if (er < Math.max(ea * 1.4, ea + 40)) continue;
+            lastUpgradeAt = now;
+            setActive(r, "faster: " + AutoTuner.fmtKbps(er) + " vs " + AutoTuner.fmtKbps(ea)
+                    + " — previous host kept in reserve");
+            // Idle sockets on the old host reconnect through the new one; sockets
+            // in the middle of a transfer are left alone to finish.
+            for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
+                if (c.upstreamProxyId != act.id || c.killer == null || c.killReason != null) continue;
+                if (now - c.lastDataAt.get() < 3_000L) continue;
+                c.killReason = "moving to a faster host";
+                try { c.killer.run(); } catch (Throwable ignored) {}
+            }
+            return;
+        }
+    }
+
     /** Id of the current active upstream (0 = none), for the UI. */
     public static long currentActiveId() {
         RelayManager m = INSTANCE;

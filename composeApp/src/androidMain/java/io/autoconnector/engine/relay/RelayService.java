@@ -64,9 +64,19 @@ public final class RelayService extends Service {
                     checkMains();
                 }
             } catch (Throwable ignored) {}
-            if (running) svc.postDelayed(this, dynamicCheckInterval());
+            if (running) {
+                long delay = dynamicCheckInterval();
+                io.autoconnector.engine.core.ScanProgress.setNextPassAt(System.currentTimeMillis() + delay);
+                svc.postDelayed(this, delay);
+            }
         }
     };
+
+    /** A check pass is running (passes never overlap; the next one waits). */
+    private final java.util.concurrent.atomic.AtomicBoolean mainsBusy =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    /** Cap for the pause between passes while scanning is on (continuous scan). */
+    private static final long MAX_IDLE_BETWEEN_PASSES_MS = 60_000L;
 
     /**
      * Combines three modifiers on top of {@link #MAINS_CHECK_INTERVAL_MS}:
@@ -87,9 +97,17 @@ public final class RelayService extends Service {
         // Base interval is the user's «Проверка, мин», scaled by the combined
         // intensity (per-net × adaptive). At max intensity it collapses to 0 →
         // we scan continuously (loop with a 1 s yield, not a hot spin).
+        // Hosts never checked yet → keep going back to back until the backlog
+        // is cleared (a fresh install / new subscriptions used to wait 25 min).
+        int backlog = 0;
+        try { backlog = ProxyStore.get(this).uncheckedCount(); } catch (Throwable ignored) {}
+        if (backlog > 0) return 3_000L;
         float mult = prefs.currentScanMult(net, alive);
         int sec = io.autoconnector.engine.core.Prefs.effectiveCheckSec(prefs.checkIntervalMin(), mult);
         long base = sec <= 0 ? 1_000L : sec * 1_000L;
+        // Scanning is always on while enabled: re-check due hosts at least once a
+        // minute so better hosts keep being found.
+        base = Math.min(base, MAX_IDLE_BETWEEN_PASSES_MS);
         // Battery: when the screen is OFF and no Telegram client is connected,
         // back background exploration off hard (×6, capped) — nobody is watching
         // the UI and nothing is relaying, so frequent probing only drains the
@@ -457,7 +475,7 @@ public final class RelayService extends Service {
                         RelayLog.emit("⟳ network → " + newMode.label
                                 + " · refreshing sticky hosts and checking the top");
                         if (manager != null) manager.refreshStickies();
-                        if (new Prefs(this).scanEnabled()) svc.post(mainsCheckTask);
+                        if (new Prefs(this).scanEnabled()) { svc.removeCallbacks(mainsCheckTask); svc.post(mainsCheckTask); }
                     };
                     nm.addListener(netListener);
                 }
@@ -541,7 +559,18 @@ public final class RelayService extends Service {
      * Telegram had no working upstreams until the next scheduled check.
      */
     private void checkMains() {
-        io.autoconnector.engine.core.AppExecutors.SERVICE.submit(() -> {
+        if (!mainsBusy.compareAndSet(false, true)) return;   // previous pass still running
+        try {
+            io.autoconnector.engine.core.AppExecutors.SERVICE.submit(() -> {
+                try { checkMainsInner(); } finally { mainsBusy.set(false); }
+            });
+        } catch (Throwable t) {
+            mainsBusy.set(false);
+        }
+    }
+
+    private void checkMainsInner() {
+        {
             ProxyStore store = ProxyStore.get(this);
             Set<Long> ids = RelayManager.currentStickyProxyIds();
             List<ProxyEntry> mains = ids.isEmpty()
@@ -557,6 +586,7 @@ public final class RelayService extends Service {
             int aliveNow = (net != io.autoconnector.engine.core.NetworkMode.UNKNOWN)
                     ? store.aliveCountForMode(net) : store.aliveCount();
             float mult = prefs.currentScanMult(net, aliveNow);
+            if (store.uncheckedCount() > 0) mult = Math.min(mult, 1.0f);   // backlog: full speed
             int batch = io.autoconnector.engine.core.Prefs.effectiveBatch(prefs.checkBatch(), mult);
             int conc = io.autoconnector.engine.core.Prefs.effectiveConcurrency(prefs.checkConcurrency(), mult);
 
@@ -609,7 +639,7 @@ public final class RelayService extends Service {
                 RelayLog.emit("@scan", "⟳ wide check done · live: "
                         + store.aliveCount());
             }
-        });
+        }
     }
 
     private static boolean containsId(List<ProxyEntry> list, long id) {

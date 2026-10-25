@@ -632,6 +632,20 @@ public final class RelayConnection implements Runnable {
         // Session affinity: every Telegram socket goes to the ACTIVE host (one
         // proven proxy, like entering it directly in Telegram). Only when there is
         // none — or it just failed — is a new one elected, by ONE socket at a time.
+        // Speed scouting: now and then a socket measures another host (see
+        // RelayManager.nextScout); falls back to the active host if it fails.
+        ProxyEntry scout = manager.nextScout();
+        if (scout != null && !(onlyFakeTls && !scout.isFakeTls())) {
+            UpstreamConnector.Channel s = trySerial(java.util.Collections.singletonList(scout),
+                    tag, dcId, dst, mode, exp, Math.min(connectTimeoutMs, 2500));
+            if (s != null) {
+                ProxyEntry act = manager.activeEntry();
+                RelayLog.emit("🔎 scouting " + scout.host + ":" + scout.port
+                        + " — measuring its real speed on this socket"
+                        + (act != null ? " (active stays " + act.host + ")" : ""));
+                return s;
+            }
+        }
         UpstreamConnector.Channel a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
         if (a != null) return a;
         java.util.concurrent.locks.ReentrantLock lock = manager.electLock();
@@ -647,7 +661,8 @@ public final class RelayConnection implements Runnable {
             }
             a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
             if (a != null) return a;
-            UpstreamConnector.Channel c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
+            UpstreamConnector.Channel c = tryReserves(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
+            if (c == null) c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
                     connMode, raceWidth, breadth, connectTimeoutMs, true);
             if (c != null && manager.activeEntry() == null) manager.setActive(c.proxy, electedWhy(c.proxy));
             return c;
@@ -655,13 +670,31 @@ public final class RelayConnection implements Runnable {
         try {
             a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
             if (a != null) return a;
-            UpstreamConnector.Channel c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
+            UpstreamConnector.Channel c = tryReserves(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
+            if (c == null) c = acquireByRace(tag, dcId, dst, mode, onlyFakeTls, exp,
                     connMode, raceWidth, breadth, connectTimeoutMs, true);
             if (c != null) manager.setActive(c.proxy, electedWhy(c.proxy));
             return c;
         } finally {
             lock.unlock();
         }
+    }
+
+    /** Election, step 1: race the reserve hosts (fastest measured) — the first to
+     *  answer becomes the new active host. Null if there are none / all failed. */
+    private UpstreamConnector.Channel tryReserves(int tag, int dcId, Socks5Server.Target dst,
+                                                 HandshakeMode mode, WireShaper.Mode exp,
+                                                 boolean onlyFakeTls, int connectTimeoutMs) {
+        List<ProxyEntry> res = new ArrayList<>();
+        for (ProxyEntry p : manager.reserveEntries()) {
+            if (onlyFakeTls && !p.isFakeTls()) continue;
+            res.add(p);
+        }
+        if (res.isEmpty()) return null;
+        UpstreamConnector.Channel c = tryRace(res, tag, dcId, dst, mode, exp, res.size(),
+                Math.min(Math.max(connectTimeoutMs, 2000), 4000), false);
+        if (c != null) RelayLog.emit("⛁ reserve host took over: " + c.proxy.host + ":" + c.proxy.port);
+        return c;
     }
 
     /** Connects to the active host, or returns null if there is none / it failed

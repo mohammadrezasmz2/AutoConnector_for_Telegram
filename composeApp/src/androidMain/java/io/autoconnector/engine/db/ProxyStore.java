@@ -799,6 +799,12 @@ public class ProxyStore extends SQLiteOpenHelper {
                 new String[]{String.valueOf(limit)});
     }
 
+    /** Hosts never probed yet (and not on cooldown) — the scan backlog. */
+    public int uncheckedCount() {
+        return scalar("SELECT COUNT(*) FROM " + T + " WHERE last_check=0 AND cool_until<="
+                + System.currentTimeMillis(), null);
+    }
+
     /** Count of currently-alive hosts — cheap; lets callers decide whether
      *  to trigger a wider scan after a failover cascade. */
     public int aliveCount() {

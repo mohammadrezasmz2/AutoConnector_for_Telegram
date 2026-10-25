@@ -12,8 +12,9 @@ public final class TrafficGovernor {
     private static final long BUSY_BPS = 48L * 1024;
     /** Stay "busy" this long after the last busy second (avoid flapping). */
     private static final long HOLD_MS = 8_000L;
-    /** Max parallel probes while Telegram is busy. */
-    private static final int BUSY_PROBE_CAP = 2;
+    /** Max parallel probes while Telegram is busy. A probe is a few KB, so 4
+     *  keeps the scan moving without taking real bandwidth from Telegram. */
+    private static final int BUSY_PROBE_CAP = 4;
 
     private static volatile boolean enabled = true;
     private static volatile long lastBusyAt = 0L;

@@ -413,6 +413,14 @@ interface Strings {
     val measuredDown: String get() = "download"
     val measuredUp: String get() = "upload"
     val measuredBoth: String get() = "download/upload"
+    fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int): String =
+        "Checking $done / $total · $ok answered · $threads at once · $perMin/min"
+    fun scanPulseIdle(nextSec: Int, backlog: Int): String =
+        (if (nextSec >= 0) "Next check in ${nextSec}s" else "Scan waiting") +
+            (if (backlog > 0) " · $backlog new hosts not checked yet" else " · every host checked")
+    val reserveShort: String get() = "R"
+    val reserveField: String get() = "Reserve"
+    fun reserveRankText(n: Int): String = "#$n backup — takes over if the active host fails or is slower"
     val qrTitle: String get() = "Proxy QR code"
     val qrShare: String get() = "Share QR"
     val qrHint: String get() = "Scan with another phone's camera or Telegram to add this proxy."

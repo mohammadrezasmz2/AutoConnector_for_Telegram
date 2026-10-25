@@ -250,6 +250,7 @@ public final class CheckRunner {
                     store.endTransaction();
                 }
             } catch (Exception ignored) {}
+            io.autoconnector.engine.core.ScanProgress.onProbe(r.ok());
             switch (r.grade) {
                 case FULL: full.incrementAndGet(); break;
                 case STEALTH: stealth.incrementAndGet(); break;
