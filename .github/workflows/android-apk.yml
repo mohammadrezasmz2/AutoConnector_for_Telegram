@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -25,8 +25,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # The GitHub runner image already ships the Android SDK (ANDROID_HOME).
       - id: android
-        uses: android-actions/setup-android@v3
+        name: Check Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools" | head -20
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       # The project has no Gradle wrapper; AGP 8.5 needs Gradle >= 8.7.
       - id: gradle
@@ -45,7 +50,7 @@ jobs:
       - name: Diagnostics
         if: failure()
         run: |
-          echo "::warning::steps: java=${{ steps.java.outcome }} android=${{ steps.android.outcome }} gradle=${{ steps.gradle.outcome }} build=${{ steps.build.outcome }}"
+          echo "::warning::steps: java=${{ steps.java.outcome }} android=${{ steps.android.outcome }} (ANDROID_HOME=$ANDROID_HOME) gradle=${{ steps.gradle.outcome }} build=${{ steps.build.outcome }}"
           if [ -f build.log ]; then
             ERR=$( { grep -E '^e: |error:|What went wrong|Could not|> ' build.log | grep -v '^> Task' | head -60; echo '----- tail -----'; tail -40 build.log; } | cut -c1-300 )
             ERR="${ERR//'%'/'%25'}"; ERR="${ERR//$'\n'/'%0A'}"; ERR="${ERR//$'\r'/}"
