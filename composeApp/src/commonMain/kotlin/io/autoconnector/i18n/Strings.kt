@@ -402,6 +402,7 @@ interface Strings {
     val sortUpload: String get() = "⬆ Upload"
     val sortOverall: String get() = "⚖ Overall"
     val upField: String get() = "Upload speed in Telegram"
+    val copyPasteHint: String get() = "paste them in Telegram (e.g. Saved Messages) and tap each link to add it"
     val activeInRelayWord: String get() = "★ active in relay"
     val setupTgPorts: String get() = "Set up ports in Telegram"
     fun catalogCopyTop(n: Int): String = "Copy top $n"

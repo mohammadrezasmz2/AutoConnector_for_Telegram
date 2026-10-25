@@ -130,6 +130,7 @@ fun CatalogContent(
     // tab (the global aggregate [items] would mask it). [items] is kept in the
     // signature only to avoid breaking the caller.
     var sortTab by remember { mutableStateOf(SortTab.DOWN) }
+    var copiedN by remember { mutableStateOf(0) }
     val raw = remember(selected, refreshKey) { catalogForMode(selected) }
     val shown = remember(raw, sortTab) { sortForTab(raw, sortTab) }
 
@@ -215,30 +216,25 @@ fun CatalogContent(
                     Spacer(Modifier.width(4.dp))
                     Text(t.catalogBestRelay, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                // Top 5 straight into Telegram's own proxy list, one after another.
+                // Copy the top 5 links of the current ranking (paste them in
+                // Telegram, e.g. in Saved Messages, and tap each to add it).
                 OutlinedButton(
-                    onClick = { onAddTopToTelegram(top5) },
+                    onClick = { onCopyTop(top5); copiedN = top5.size },
                     enabled = top5.isNotEmpty(),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 ) {
-                    Icon(Icons.Filled.Send, null, Modifier.size(16.dp))
+                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(t.catalogTopToTg(top5.size), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.catalogCopyTop(top5.size), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            if (tgAddTotal > 0) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        t.tgAddProgress(tgAddDone, tgAddTotal),
-                        color = AppColors.amber, fontSize = 12.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    androidx.compose.material3.TextButton(onClick = onCancelTelegramAdd) { Text(t.cancel) }
-                }
+            if (copiedN > 0) {
+                Text(
+                    t.catalogCopied(copiedN) + " — " + t.copyPasteHint,
+                    color = AppColors.green, fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
             }
             Text(
                 t.catalogSortHint,

@@ -118,7 +118,10 @@ public final class FakeTlsClient {
         }
         rawOut.write(new byte[]{0x14, 0x03, 0x03, 0x00, 0x01, 0x01});
         rawOut.flush();
-        return new FakeTlsClient(new RecordInput(rawIn), new RecordOutput(rawOut));
+        // Buffered: a TLS record is header (5 B) + payload, read with two
+        // readFully calls — unbuffered that is several syscalls per record.
+        return new FakeTlsClient(new RecordInput(new java.io.BufferedInputStream(rawIn, 65536)),
+                new RecordOutput(rawOut));
     }
 
     /**
@@ -523,19 +526,34 @@ public final class FakeTlsClient {
             write(new byte[]{(byte) b}, 0, 1);
         }
 
+        /**
+         * Writes app data as TLS records with ONE write per record (header +
+         * payload together). The old version wrote the 5 header bytes one by one:
+         * on a Nagle socket that sent a lone 1-byte TCP segment per Telegram
+         * request and held the rest until it was ACKed — a full extra round trip
+         * on every request, and a packet pattern no real TLS client produces (an
+         * easy target for DPI throttling). That is why the relay was much slower
+         * than the same proxy entered directly in Telegram.
+         */
         @Override
         public void write(byte[] b, int off, int len) throws IOException {
+            if (len <= 0) return;
+            int records = (len + MAX_TLS_RECORD - 1) / MAX_TLS_RECORD;
+            byte[] out = new byte[len + records * 5];
+            int o = 0;
             while (len > 0) {
                 int chunk = Math.min(len, MAX_TLS_RECORD);
-                raw.write(0x17);
-                raw.write(0x03);
-                raw.write(0x03);
-                raw.write((chunk >> 8) & 0xff);
-                raw.write(chunk & 0xff);
-                raw.write(b, off, chunk);
+                out[o++] = 0x17;
+                out[o++] = 0x03;
+                out[o++] = 0x03;
+                out[o++] = (byte) ((chunk >> 8) & 0xff);
+                out[o++] = (byte) (chunk & 0xff);
+                System.arraycopy(b, off, out, o, chunk);
+                o += chunk;
                 off += chunk;
                 len -= chunk;
             }
+            raw.write(out, 0, o);
         }
 
         @Override

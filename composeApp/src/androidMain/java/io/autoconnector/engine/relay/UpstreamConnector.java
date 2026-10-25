@@ -195,6 +195,11 @@ public final class UpstreamConnector {
             int connMs = (int) ((System.nanoTime() - connT0) / 1_000_000L);
             s.setSoTimeout(timeoutMs);
             WireShaper.applySocketOptions(s, exp);
+            // Reference path: send every write immediately, like Telegram's own
+            // sockets do (Nagle + delayed ACK added a round trip per request).
+            if (exp == WireShaper.Mode.OFF) {
+                try { s.setTcpNoDelay(true); } catch (Exception ignored) {}
+            }
 
             // The bare socket output, and the "innermost" obfuscation-engine wrap
             // on top of it. For OFF / NAGLE_ONLY / TLS_RECHUNK wrapRaw returns the

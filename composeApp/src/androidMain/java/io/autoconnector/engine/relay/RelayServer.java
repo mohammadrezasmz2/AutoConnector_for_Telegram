@@ -55,6 +55,7 @@ public final class RelayServer {
             while (running) {
                 try {
                     Socket client = serverSocket.accept();
+                    try { client.setTcpNoDelay(true); } catch (Exception ignored) {}
                     try {
                         AppExecutors.RELAY.submit(
                                 new RelayConnection(client, port, store, manager, listener));

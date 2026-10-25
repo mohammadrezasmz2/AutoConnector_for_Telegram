@@ -27,13 +27,13 @@ public final class SpeedMeter {
     /** Window length in buckets (8 × 250 ms = 2 s). */
     private static final int WIN = 8;
     /** A 2 s window must carry at least this much to count as a burst sample. */
-    private static final long MIN_WINDOW_BYTES = 96L * 1024;
+    private static final long MIN_WINDOW_BYTES = 32L * 1024;
     /** A bucket with at least this many bytes counts as "transferring". */
-    private static final long BUSY_BUCKET_BYTES = 4L * 1024;
+    private static final long BUSY_BUCKET_BYTES = 2L * 1024;
     /** Minimum busy bytes before the busy-bucket estimate is trusted. */
-    private static final long MIN_BUSY_BYTES = 128L * 1024;
+    private static final long MIN_BUSY_BYTES = 48L * 1024;
     /** A bucket with this much data marks "a download is in progress". */
-    private static final long BURST_MARK_BYTES = 16L * 1024;
+    private static final long BURST_MARK_BYTES = 8L * 1024;
 
     private final long[] ring = new long[WIN];
     private long curBucket = -1;
