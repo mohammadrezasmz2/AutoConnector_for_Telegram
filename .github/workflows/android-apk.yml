@@ -2,7 +2,8 @@ name: Build Android APK
 
 # Builds an installable APK on every push to main (and on demand from the
 # Actions tab). The APK is attached to the run's "Artifacts" and also pushed to
-# the `ci-apk` branch; on failure the build log is pushed to `ci-logs`.
+# the `ci-apk` branch; on failure a summary of the build log is reported as an
+# annotation and the full log is pushed to the `ci-logs` branch.
 on:
   push:
     branches: [ main ]
@@ -18,37 +19,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - id: java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      - id: android
+        uses: android-actions/setup-android@v3
 
       # The project has no Gradle wrapper; AGP 8.5 needs Gradle >= 8.7.
-      - uses: gradle/actions/setup-gradle@v4
+      - id: gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
+      - id: build
+        name: Build debug APK
         env:
           GRADLE_OPTS: -Xmx3g
         run: |
           set -o pipefail
           gradle :composeApp:assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
 
-      - name: Report compile errors
+      - name: Diagnostics
         if: failure()
         run: |
-          grep -E '^e: |error:|FAILURE|What went wrong' -A3 build.log | head -40 | while IFS= read -r l; do
-            echo "::error::${l}"
-          done
-          mkdir -p /tmp/logs && cp build.log /tmp/logs/
-          cd /tmp/logs
-          git init -q && git checkout -q -b ci-logs
-          git add build.log
-          git -c user.name=ci -c user.email=ci@localhost commit -q -m "build log ${GITHUB_SHA}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs
+          echo "::warning::steps: java=${{ steps.java.outcome }} android=${{ steps.android.outcome }} gradle=${{ steps.gradle.outcome }} build=${{ steps.build.outcome }}"
+          if [ -f build.log ]; then
+            ERR=$( { grep -E '^e: |error:|What went wrong|Could not|> ' build.log | grep -v '^> Task' | head -60; echo '----- tail -----'; tail -40 build.log; } | cut -c1-300 )
+            ERR="${ERR//'%'/'%25'}"; ERR="${ERR//$'\n'/'%0A'}"; ERR="${ERR//$'\r'/}"
+            echo "::error title=build log::${ERR}"
+            mkdir -p /tmp/logs && cp build.log /tmp/logs/ && cd /tmp/logs
+            git init -q && git checkout -q -b ci-logs && git add build.log
+            git -c user.name=ci -c user.email=ci@localhost commit -q -m "build log ${GITHUB_SHA}"
+            git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs || echo "::warning::could not push ci-logs"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
