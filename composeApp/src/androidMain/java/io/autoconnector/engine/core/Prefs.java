@@ -540,6 +540,10 @@ public class Prefs {
 
     // --- Speed-first relay (download-speed ranking, stall guard, auto-tune) -----
 
+    /** Learned Telegram address → DC map ("ip=dc;ip=dc"), see DcResolver. */
+    public String dcMapLearned() { return sp.getString("dc_map_learned", ""); }
+    public void setDcMapLearned(String v) { sp.edit().putString("dc_map_learned", v).apply(); }
+
     /** Rank upstreams by measured real Telegram download speed (default ON). */
     public boolean speedPriority() { return sp.getBoolean("speed_priority", true); }
     public void setSpeedPriority(boolean v) { sp.edit().putBoolean("speed_priority", v).apply(); }

@@ -88,6 +88,8 @@ public final class RelayConnection implements Runnable {
     private volatile Socket upSocket;
     /** DC id of this session, for the close log line. */
     private volatile int dcIdForLog;
+    /** Address Telegram asked for (SOCKS5 target), for DC learning. */
+    private volatile String dstHostForLog;
     private volatile ProxyEntry upstreamProxy;
     /** Set once the LiveConn is registered — both pipe directions update its
      *  counters / latency-pair timestamps through this reference. */
@@ -217,8 +219,12 @@ public final class RelayConnection implements Runnable {
             Obfuscated2 local = new Obfuscated2();
             local.accept(rec, null);
             int tag = local.transportTag;
-            int dcId = local.dcId;
-            if (dcId < 1 || dcId > 5) dcId = DcAddresses.dcIdForIp(dst.host);
+            // Which DC Telegram wants — from the address it asked for (Telegram
+            // leaves the header's dc field random over SOCKS5). Getting this wrong
+            // made the proxy connect Telegram to the wrong DC: it hung up after
+            // the first reply, over and over (see DcResolver).
+            int dcId = io.autoconnector.engine.net.DcResolver.resolve(dst.host, local.dcId);
+            dstHostForLog = dst.host;
 
             // 3. Acquire an upstream, with connect-time failover.
             // 3a. Experimental: try a pre-warmed standby socket first — if the pool
@@ -422,6 +428,16 @@ public final class RelayConnection implements Runnable {
                 String why = liveConnRef == null ? "" :
                         (liveConnRef.killReason != null ? liveConnRef.killReason
                                 : (liveConnRef.closedBy.get() != null ? liveConnRef.closedBy.get() : "?"));
+                // Teach the DC resolver: real data = right DC; Telegram hanging up
+                // right after a tiny first reply = most likely the wrong DC.
+                if (liveConnRef != null) {
+                    long dDown = liveConnRef.bytesDown.get(), dUp = liveConnRef.bytesUp.get();
+                    boolean good = dDown > 2048;
+                    boolean bad = !good && liveConnRef.killReason == null
+                            && "Telegram closed".equals(liveConnRef.closedBy.get())
+                            && dur < 5000 && dDown <= 256 && dUp > 0;
+                    io.autoconnector.engine.net.DcResolver.report(dstHostForLog, dcIdForLog, good, bad);
+                }
                 RelayLog.emit("⨂ " + upstreamProxy.host + ":" + upstreamProxy.port
                         + " — session closed after "
                         + io.autoconnector.engine.core.Durations.human(dur / 1000)
@@ -475,7 +491,7 @@ public final class RelayConnection implements Runnable {
             try { direct.setKeepAlive(true); } catch (Exception ignored) {}
             upSocket = direct;
 
-            int dcId = DcAddresses.dcIdForIp(host);
+            int dcId = io.autoconnector.engine.net.DcResolver.resolve(host, 0);
             RelayLog.emit("→ " + host + ":" + port + " (port " + localPort
                     + ", direct, DC" + dcId
                     + (antiDpi ? ", anti-DPI: fragmentation" : "") + ")");

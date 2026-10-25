@@ -1048,6 +1048,8 @@ class AndroidEngine(context: Context) : Engine {
                 " pending=${if (c.pendingWriteAt.get() > 0) (now - c.pendingWriteAt.get()) else 0}ms" +
                 " prewarm=${c.fromPrewarm}").append(nl)
         }
+        sb.append(nl).append("--- Telegram address → DC map ---").append(nl)
+        sb.append(io.autoconnector.engine.net.DcResolver.dump())
         sb.append(nl).append("--- measured speeds (KB/s) ---").append(nl)
         for (st in SpeedBoard.snapshot().sortedByDescending { it.effective(now) }.take(60)) {
             sb.append("${st.entry?.host}:${st.entry?.port} mode=${st.mode} down=${"%.1f".format(st.kbps)} x${st.samples}" +

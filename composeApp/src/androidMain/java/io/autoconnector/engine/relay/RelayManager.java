@@ -101,11 +101,21 @@ public final class RelayManager {
         }
         INSTANCE = this;
         SpeedBoard.init(store);
+        initDcResolver(appContext);
         applyTuningPrefs(appContext);
         prewarm = new PrewarmPool(store, appContext);
         prewarm.start();
         watchdog = new StallWatchdog(this, store);
         watchdog.start();
+    }
+
+    /** Wires the DC resolver to Prefs (learned DC map) and the relay log. */
+    public static void initDcResolver(Context ctx) {
+        final io.autoconnector.engine.core.Prefs p = new io.autoconnector.engine.core.Prefs(ctx);
+        io.autoconnector.engine.net.DcResolver.init(new io.autoconnector.engine.net.DcResolver.Store() {
+            @Override public String load() { return p.dcMapLearned(); }
+            @Override public void save(String encoded) { p.setDcMapLearned(encoded); }
+        }, RelayLog::emit);
     }
 
     /** Pushes the speed/auto-tune feature switches from Prefs into the engine. */

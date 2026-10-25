@@ -127,6 +127,8 @@ public final class StallWatchdog {
         SpeedBoard.Stat st = SpeedBoard.get(act.id, mode);
         if (st == null || st.lastSampleAt <= manager.activeSince()) return;   // no sample as active yet
         if (now - st.lastSampleAt > 30_000L || st.lastSampleKbps >= SLOW_SWITCH_KBPS) return;
+        // Only when the host is CONSISTENTLY slow, not after one small sample.
+        if (st.samples < 3 || st.kbps >= SLOW_SWITCH_KBPS) return;
         if (now - manager.activeSince() < 20_000L) return;                    // give it a fair chance
         while (!switchTimes.isEmpty() && now - switchTimes.peekFirst() > 5 * 60_000L) switchTimes.pollFirst();
         double cur = st.lastSampleKbps;
@@ -137,6 +139,7 @@ public final class StallWatchdog {
         for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
             if (c.upstreamProxyId != act.id || c.killer == null || c.killReason != null) continue;
             if (!c.meter.downloadingWithin(now, 30_000L) && now - c.lastDownAt.get() > 5_000L) continue;
+            if (c.meter.peakKbps >= 2 * SLOW_SWITCH_KBPS) continue;   // this socket is doing fine
             c.killReason = "slow host — moving Telegram to a faster one";
             try { c.killer.run(); } catch (Throwable ignored) {}
         }
