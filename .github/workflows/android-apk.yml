@@ -1,9 +1,17 @@
 name: Build Android APK
 
-# Builds an installable APK on every push to main (and on demand from the
-# Actions tab). The APK is attached to the run's "Artifacts" and also pushed to
-# the `ci-apk` branch; on failure a summary of the build log is reported as an
-# annotation and the full log is pushed to the `ci-logs` branch.
+# Builds the Android APK on every push to main (and on demand from the Actions
+# tab).
+#
+# * If the signing secrets are set (ACTG_STORE_B64, ACTG_STORE_PASSWORD,
+#   ACTG_KEY_ALIAS, ACTG_KEY_PASSWORD) a RELEASE APK signed with your own fixed
+#   key is built and published as a GitHub Release — every new build installs as
+#   an update over the previous one, and Obtainium can auto-update from it.
+# * Without the secrets a debug APK is built instead.
+#
+# The APK is also attached to the run's Artifacts and pushed to the `ci-apk`
+# branch; on failure a build-log summary is reported as an annotation and the
+# full log is pushed to `ci-logs`.
 on:
   push:
     branches: [ main ]
@@ -16,6 +24,8 @@ jobs:
   apk:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      CI_BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,18 +49,45 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - id: signing
+        name: Prepare release signing
+        env:
+          STORE_B64: ${{ secrets.ACTG_STORE_B64 }}
+        run: |
+          if [ -n "$STORE_B64" ]; then
+            echo "$STORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ACTG_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "variant=release" >> "$GITHUB_OUTPUT"
+            echo "Signing with the release key."
+          else
+            echo "variant=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::No signing secrets — building a DEBUG apk."
+          fi
+
       - id: build
-        name: Build debug APK
+        name: Build APK
         env:
           GRADLE_OPTS: -Xmx3g
+          ACTG_STORE_PASSWORD: ${{ secrets.ACTG_STORE_PASSWORD }}
+          ACTG_KEY_ALIAS: ${{ secrets.ACTG_KEY_ALIAS }}
+          ACTG_KEY_PASSWORD: ${{ secrets.ACTG_KEY_PASSWORD }}
         run: |
           set -o pipefail
-          gradle :composeApp:assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+          if [ "${{ steps.signing.outputs.variant }}" = "release" ]; then
+            TASK=assembleRelease
+          else
+            TASK=assembleDebug
+          fi
+          gradle :composeApp:$TASK --stacktrace --no-daemon 2>&1 | tee build.log
+          mkdir -p out
+          APK=$(ls composeApp/build/outputs/apk/${{ steps.signing.outputs.variant }}/*.apk | head -1)
+          cp "$APK" "out/AutoConnector-1.2.${{ github.run_number }}-speed.apk"
+          ls -la out
 
       - name: Diagnostics
         if: failure()
         run: |
-          echo "::warning::steps: java=${{ steps.java.outcome }} android=${{ steps.android.outcome }} (ANDROID_HOME=$ANDROID_HOME) gradle=${{ steps.gradle.outcome }} build=${{ steps.build.outcome }}"
+          echo "::warning::steps: java=${{ steps.java.outcome }} android=${{ steps.android.outcome }} gradle=${{ steps.gradle.outcome }} signing=${{ steps.signing.outcome }} build=${{ steps.build.outcome }}"
           if [ -f build.log ]; then
             ERR=$( { grep -E '^e: |error:|What went wrong|Could not|> ' build.log | grep -v '^> Task' | head -60; echo '----- tail -----'; tail -40 build.log; } | cut -c1-300 )
             ERR="${ERR//'%'/'%25'}"; ERR="${ERR//$'\n'/'%0A'}"; ERR="${ERR//$'\r'/}"
@@ -63,15 +100,27 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AutoConnector-android-debug
-          path: composeApp/build/outputs/apk/debug/*.apk
+          name: AutoConnector-android-${{ steps.signing.outputs.variant }}
+          path: out/*.apk
           if-no-files-found: error
 
       - name: Publish APK to the ci-apk branch
         run: |
-          mkdir -p /tmp/apk && cp composeApp/build/outputs/apk/debug/*.apk /tmp/apk/AutoConnector-1.2.0-speed.apk
-          cd /tmp/apk
+          mkdir -p /tmp/apk && cp out/*.apk /tmp/apk/ && cd /tmp/apk
           git init -q && git checkout -q -b ci-apk
-          git add AutoConnector-1.2.0-speed.apk
-          git -c user.name=ci -c user.email=ci@localhost commit -q -m "APK ${GITHUB_SHA}"
+          git add *.apk
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "APK ${GITHUB_SHA} (${{ steps.signing.outputs.variant }})"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-apk
+
+      # Signed builds become a GitHub Release (what Obtainium tracks).
+      - name: Publish GitHub Release
+        if: steps.signing.outputs.variant == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v1.2.${{ github.run_number }}-speed"
+          gh release create "$TAG" out/*.apk \
+            --repo "${{ github.repository }}" \
+            --target "${GITHUB_SHA}" \
+            --title "AutoConnector $TAG" \
+            --notes "Speed-first build ${GITHUB_SHA::7}. Install over the previous signed build — no uninstall needed."

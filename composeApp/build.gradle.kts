@@ -122,8 +122,11 @@ android {
         applicationId = "io.autoconnector"
         minSdk = 24
         targetSdk = 34
-        versionCode = 84
-        versionName = "1.2.0-speed"
+        // CI passes the run number so every build is a strictly newer update
+        // (installs over the previous one without uninstalling).
+        val ciBuild = System.getenv("CI_BUILD_NUMBER")?.toIntOrNull()
+        versionCode = 84 + (ciBuild ?: 0)
+        versionName = if (ciBuild != null) "1.2.$ciBuild-speed" else "1.2.0-speed"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
