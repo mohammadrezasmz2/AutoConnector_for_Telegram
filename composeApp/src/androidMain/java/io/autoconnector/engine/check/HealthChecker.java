@@ -229,7 +229,7 @@ public final class HealthChecker {
         long t0 = System.nanoTime();
         // Short connect timeout (unreachable hosts give up sooner); generous read
         // timeout for the handshake that follows.
-        s.connect(new InetSocketAddress(host, port), connectTimeoutMs);
+        s.connect(io.autoconnector.engine.net.Dns.resolve(host, port, Math.min(Math.max(connectTimeoutMs, 2000), 5000)), connectTimeoutMs);
         LAST_CONNECT_MS.set((int) ((System.nanoTime() - t0) / 1_000_000L));
         s.setSoTimeout(timeoutMs);
         return s;

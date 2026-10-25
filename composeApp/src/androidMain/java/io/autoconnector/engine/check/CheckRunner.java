@@ -116,7 +116,13 @@ public final class CheckRunner {
         for (ProxyEntry p : list) {
             if (io.autoconnector.engine.core.ScanGate.isProbeAbort()) break;
             try {
-                inflight.acquire();
+                // Never wait forever for a free slot: if every slot is held by a
+                // hung probe, end this pass and let the next one start.
+                if (!inflight.tryAcquire(PROBE_HARD_MS, TimeUnit.MILLISECONDS)) {
+                    log.line("⌛ all probe slots stuck for " + (PROBE_HARD_MS / 1000)
+                            + " s — ending this pass, the next one starts right away");
+                    break;
+                }
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
                 break;
@@ -144,21 +150,36 @@ public final class CheckRunner {
         // forever — the probe's own socket timeout will release the slot
         // shortly after, and the caller (foreground service / Activity)
         // can move on.
-        long deadline = System.nanoTime()
-                + TimeUnit.SECONDS.toNanos(60L + list.size() * 2L);
+        // A probe normally ends within ~12 s (connect + handshake timeouts). One
+        // that hangs longer (stuck DNS, a server trickling bytes) must not keep
+        // the whole pass — and the live counter — frozen: stragglers get at most
+        // PROBE_HARD_MS after the last probe was started, then they're abandoned.
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(PROBE_HARD_MS);
+        int abandoned = 0;
         for (Future<?> f : futures) {
             if (io.autoconnector.engine.core.ScanGate.isProbeAbort()) { f.cancel(true); continue; }
             long remain = deadline - System.nanoTime();
-            if (remain <= 0) { f.cancel(true); continue; }
+            if (remain <= 0) {
+                if (!f.isDone()) { f.cancel(true); abandoned++; }
+                continue;
+            }
             try {
                 f.get(remain, TimeUnit.NANOSECONDS);
             } catch (Exception ignored) {
+                if (!f.isDone()) abandoned++;
                 f.cancel(true);
             }
+        }
+        if (abandoned > 0) {
+            log.line("⌛ " + abandoned + " probe(s) hung > " + (PROBE_HARD_MS / 1000)
+                    + " s — skipped, scan continues");
         }
         log.line("— done: live " + full + ", stealth " + stealth
                 + ", dead " + dead + " —");
     }
+
+    /** Longest a pass waits for one probe (normal probes end within ~12 s). */
+    private static final long PROBE_HARD_MS = 25_000L;
 
     private static final java.util.concurrent.atomic.AtomicLong LAST_THROTTLE_LOG =
             new java.util.concurrent.atomic.AtomicLong();
@@ -167,9 +188,13 @@ public final class CheckRunner {
      *  Returns false if the scan was aborted meanwhile. */
     private boolean throttleWhileTelegramBusy(AtomicInteger running) {
         boolean logged = false;
+        long waitStart = System.currentTimeMillis();
         while (io.autoconnector.engine.core.TrafficGovernor.busy()
                 && running.get() >= io.autoconnector.engine.core.TrafficGovernor.probeCap(concurrency)) {
             if (io.autoconnector.engine.core.ScanGate.isProbeAbort()) return false;
+            // The probes holding the slots are hung — end the pass instead of
+            // waiting on them forever (the next pass starts right away).
+            if (System.currentTimeMillis() - waitStart > PROBE_HARD_MS) return false;
             if (!logged) {
                 long now = System.currentTimeMillis();
                 long prev = LAST_THROTTLE_LOG.get();

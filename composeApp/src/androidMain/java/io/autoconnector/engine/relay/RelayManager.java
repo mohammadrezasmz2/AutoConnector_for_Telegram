@@ -171,7 +171,7 @@ public final class RelayManager {
     // Speeds are only known for hosts that carried real Telegram traffic, and with
     // session affinity every socket goes to the active host — so before, only ONE
     // host ever got measured. Now:
-    //  * SCOUTING: once the active host is settled, every 3rd new Telegram socket
+    //  * SCOUTING: once the active host is settled, every 2nd new Telegram socket
     //    goes to a candidate (a top-rated host not measured yet, or a reserve whose
     //    number is getting old) so its real speed gets measured. If the candidate
     //    doesn't answer within 2.5 s the socket falls back to the active host.
@@ -278,14 +278,14 @@ public final class RelayManager {
 
     /**
      * Candidate host for this new Telegram socket to measure, or null to use the
-     * active host as usual. Every 3rd socket, once the active host is settled.
+     * active host as usual. Every 2nd socket, once the active host is settled.
      */
     public ProxyEntry nextScout() {
         ProxyEntry act = active;
         if (act == null || pinned != null || !AutoTuner.isEnabled()) return null;
         long now = System.currentTimeMillis();
         if (now - activeSince < 15_000L) return null;
-        if (scoutTick.incrementAndGet() % 3 != 0) return null;
+        if (scoutTick.incrementAndGet() % 2 != 0) return null;
         for (ProxyEntry p : scoutQueue) {
             if (p.id == act.id) continue;
             Long at = scoutedAt.get(p.id);

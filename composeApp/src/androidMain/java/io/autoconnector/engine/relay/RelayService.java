@@ -75,6 +75,7 @@ public final class RelayService extends Service {
     /** A check pass is running (passes never overlap; the next one waits). */
     private final java.util.concurrent.atomic.AtomicBoolean mainsBusy =
             new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile long mainsStartedAt = 0;
     /** Cap for the pause between passes while scanning is on (continuous scan). */
     private static final long MAX_IDLE_BETWEEN_PASSES_MS = 60_000L;
 
@@ -559,7 +560,13 @@ public final class RelayService extends Service {
      * Telegram had no working upstreams until the next scheduled check.
      */
     private void checkMains() {
-        if (!mainsBusy.compareAndSet(false, true)) return;   // previous pass still running
+        if (!mainsBusy.compareAndSet(false, true)) {
+            // Previous pass still running. Safety net: if it has been going for
+            // over 3 minutes something is stuck — start a new pass anyway.
+            if (System.currentTimeMillis() - mainsStartedAt < 180_000L) return;
+            RelayLog.emit("@scan", "⌛ previous check pass stuck for 3 min — starting a new one");
+        }
+        mainsStartedAt = System.currentTimeMillis();
         try {
             io.autoconnector.engine.core.AppExecutors.SERVICE.submit(() -> {
                 try { checkMainsInner(); } finally { mainsBusy.set(false); }

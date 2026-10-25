@@ -191,7 +191,7 @@ public final class UpstreamConnector {
         Socket s = new Socket();
         try {
             long connT0 = System.nanoTime();
-            s.connect(new InetSocketAddress(p.host, p.port), timeoutMs);
+            s.connect(io.autoconnector.engine.net.Dns.resolve(p.host, p.port, Math.min(timeoutMs, 5000)), timeoutMs);
             int connMs = (int) ((System.nanoTime() - connT0) / 1_000_000L);
             s.setSoTimeout(timeoutMs);
             WireShaper.applySocketOptions(s, exp);

@@ -527,12 +527,11 @@ private fun PoolLine(s: EngineState) {
         // Numbers roll to their new value so the counters visibly move while
         // the scan finds and re-checks hosts.
         val alive by androidx.compose.animation.core.animateIntAsState(s.aliveCount, label = "alive")
-        val within by androidx.compose.animation.core.animateIntAsState(s.aliveWithin15, label = "within")
-        val total by androidx.compose.animation.core.animateIntAsState(s.totalCount, label = "total")
         Text(
-            tr.alivePool(alive, within, total),
+            tr.liveProxiesLine(alive),
             color = AppColors.onSurface,
-            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            fontSize = 15.sp,
             modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 2.dp),
         )
     }
@@ -546,7 +545,7 @@ private fun PoolLine(s: EngineState) {
 private fun ScanPulseLine(s: EngineState) {
     if (!s.scanEnabled) return
     val tr = LocalStrings.current
-    val running = s.scanNowTotal > 0 && s.scanNowDone < s.scanNowTotal || s.scanNowThreads > 0
+    val running = s.scanNowTotal > 0
     val perMin = s.checksOk60s + s.checksFail60s
     Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 2.dp)) {
         if (running) {

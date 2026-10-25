@@ -17,7 +17,7 @@ public final class Socks5 {
                                  String destHost, int destPort,
                                  int timeoutMs) throws IOException {
         Socket s = new Socket();
-        s.connect(new InetSocketAddress(proxyHost, proxyPort), timeoutMs);
+        s.connect(Dns.resolve(proxyHost, proxyPort, Math.min(timeoutMs, 5000)), timeoutMs);
         s.setSoTimeout(timeoutMs);
         try {
             InputStream in = s.getInputStream();

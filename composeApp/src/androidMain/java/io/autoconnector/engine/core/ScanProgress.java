@@ -57,6 +57,9 @@ public final class ScanProgress {
             active.set(0);
             startedAtMs = 0;
             currentBatch = 0;
+            total.set(0);
+            done.set(0);
+            ok.set(0);
         }
     }
 

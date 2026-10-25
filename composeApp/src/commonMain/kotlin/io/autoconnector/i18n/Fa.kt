@@ -489,6 +489,7 @@ object Fa : Strings {
     override val measuredDown = "دانلود"
     override val measuredUp = "آپلود"
     override val measuredBoth = "دانلود/آپلود"
+    override fun liveProxiesLine(n: Int) = "پروکسی‌های زنده: $n"
     override fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int) =
         "در حال بررسی $done از $total · $ok جواب داد · $threads همزمان · $perMin در دقیقه"
     override fun scanPulseIdle(nextSec: Int, backlog: Int) =

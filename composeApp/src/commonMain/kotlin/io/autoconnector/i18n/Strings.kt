@@ -413,6 +413,7 @@ interface Strings {
     val measuredDown: String get() = "download"
     val measuredUp: String get() = "upload"
     val measuredBoth: String get() = "download/upload"
+    fun liveProxiesLine(n: Int): String = "Live proxies: $n"
     fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int): String =
         "Checking $done / $total · $ok answered · $threads at once · $perMin/min"
     fun scanPulseIdle(nextSec: Int, backlog: Int): String =
