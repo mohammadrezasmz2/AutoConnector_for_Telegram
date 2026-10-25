@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -102,6 +103,10 @@ fun CatalogContent(
     onQuickOpen: (CatalogItem) -> Unit = {},
     onUseInRelay: (CatalogItem) -> Unit = {},
     onCopyTop: (List<CatalogItem>) -> Unit = {},
+    onAddTopToTelegram: (List<CatalogItem>) -> Unit = {},
+    onCancelTelegramAdd: () -> Unit = {},
+    tgAddDone: Int = 0,
+    tgAddTotal: Int = 0,
     // Changes every engine tick so the (cached, engine-side re-ranked) list is
     // re-read and the order updates live.
     refreshKey: Long = 0L,
@@ -124,7 +129,9 @@ fun CatalogContent(
     // Always pull per-mode data so a per-mode reset is reflected even on the active
     // tab (the global aggregate [items] would mask it). [items] is kept in the
     // signature only to avoid breaking the caller.
-    val shown = remember(selected, refreshKey) { catalogForMode(selected) }
+    var sortTab by remember { mutableStateOf(SortTab.DOWN) }
+    val raw = remember(selected, refreshKey) { catalogForMode(selected) }
+    val shown = remember(raw, sortTab) { sortForTab(raw, sortTab) }
 
     // A plain Column (not LazyColumn): this composable is hosted inside the page's
     // outer LazyColumn item, and a nested vertical LazyColumn would crash. The
@@ -179,10 +186,18 @@ fun CatalogContent(
             )
         }
         if (shown.isNotEmpty()) {
-            // Quick actions: send the #1 host straight to Telegram's "add proxy"
-            // dialog, or copy the top-10 links to paste anywhere.
+            // Quick actions on the best host / top 5 of the current ranking.
             val best = shown.firstOrNull { it.alive && !it.coolingDown }
-            val topAlive = shown.filter { it.alive && !it.coolingDown }.take(10)
+            // Ranking tabs: by download, by upload, or overall (both).
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                ModeChip(t.sortDownload, sortTab == SortTab.DOWN, Modifier.weight(1f)) { sortTab = SortTab.DOWN }
+                ModeChip(t.sortUpload, sortTab == SortTab.UP, Modifier.weight(1f)) { sortTab = SortTab.UP }
+                ModeChip(t.sortOverall, sortTab == SortTab.BOTH, Modifier.weight(1f)) { sortTab = SortTab.BOTH }
+            }
+            val top5 = shown.filter { it.alive && !it.coolingDown }.take(5)
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -200,23 +215,29 @@ fun CatalogContent(
                     Spacer(Modifier.width(4.dp))
                     Text(t.catalogBestRelay, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                // Best host straight into Telegram (direct proxy, no auto-switch).
+                // Top 5 straight into Telegram's own proxy list, one after another.
                 OutlinedButton(
-                    onClick = { best?.let(onQuickOpen) },
-                    enabled = best != null,
+                    onClick = { onAddTopToTelegram(top5) },
+                    enabled = top5.isNotEmpty(),
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 ) {
                     Icon(Icons.Filled.Send, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(t.catalogBestToTg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(t.catalogTopToTg(top5.size), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                androidx.compose.material3.IconButton(
-                    onClick = { onCopyTop(topAlive) },
-                    enabled = topAlive.isNotEmpty(),
-                    modifier = Modifier.size(40.dp),
+            }
+            if (tgAddTotal > 0) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Filled.ContentCopy, contentDescription = t.catalogCopyTop(topAlive.size), tint = AppColors.accent)
+                    Text(
+                        t.tgAddProgress(tgAddDone, tgAddTotal),
+                        color = AppColors.amber, fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    androidx.compose.material3.TextButton(onClick = onCancelTelegramAdd) { Text(t.cancel) }
                 }
             }
             Text(
@@ -270,6 +291,39 @@ private fun ModeChip(label: String, selected: Boolean, modifier: Modifier, onCli
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/** Which speed the catalog list is ranked by. */
+private enum class SortTab { DOWN, UP, BOTH }
+
+/**
+ * Re-ranks the catalog for the chosen tab. The relay's active / pinned host stays
+ * on top, then hosts with a measured speed (best first), then unmeasured live
+ * hosts by rating, then cooling-down and dead ones. "Overall" weighs download
+ * 60 % and upload 40 %, each relative to the best host in the list.
+ */
+private fun sortForTab(items: List<CatalogItem>, tab: SortTab): List<CatalogItem> {
+    val bestDown = (items.maxOfOrNull { it.speedKbps } ?: 0).coerceAtLeast(1).toDouble()
+    val bestUp = (items.maxOfOrNull { it.upKbps } ?: 0).coerceAtLeast(1).toDouble()
+    fun metric(c: CatalogItem): Double = when (tab) {
+        SortTab.DOWN -> c.speedKbps.toDouble()
+        SortTab.UP -> c.upKbps.toDouble()
+        SortTab.BOTH ->
+            if (c.speedKbps < 0 && c.upKbps < 0) -1.0
+            else 0.6 * (c.speedKbps.coerceAtLeast(0) / bestDown) + 0.4 * (c.upKbps.coerceAtLeast(0) / bestUp)
+    }
+    fun tier(c: CatalogItem): Int = when {
+        c.pinned || c.activeInRelay -> 0
+        !c.alive -> 4
+        c.coolingDown -> 3
+        metric(c) >= 0 -> 1
+        else -> 2
+    }
+    return items.sortedWith(
+        compareBy<CatalogItem> { tier(it) }
+            .thenByDescending { metric(it) }
+            .thenByDescending { it.rating }
+    )
 }
 
 /** Colour for a measured download speed: green = fast, amber = usable, red = slow. */
@@ -336,9 +390,14 @@ private fun CatalogTile(p: CatalogItem, onQuickOpen: () -> Unit = {}, onClick: (
                 Modifier.weight(1.3f),
                 valueColor = speedColor(p.speedKbps),
             )
-            IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.8f))
-            // Telegram-connects / successful checks / total checks.
-            IconStat(ICON_CHECKS, "${p.tgConnections}/${p.successes}/${p.successes + p.failures}", Modifier.weight(1.4f))
+            IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.7f))
+            // Real Telegram upload speed through this host.
+            IconStat(
+                Icons.Filled.Upload,
+                if (p.upKbps >= 0) p.upHuman else t.dash,
+                Modifier.weight(1.3f),
+                valueColor = speedColor(p.upKbps),
+            )
             IconStat(ICON_TRAFFIC, p.bytesRelayedHuman, Modifier.weight(1.0f))
             // One tap: open this proxy in Telegram's "add proxy" dialog.
             androidx.compose.material3.IconButton(onClick = onQuickOpen, modifier = Modifier.size(28.dp)) {
@@ -444,6 +503,11 @@ fun CatalogDetailPage(
                             Icons.Filled.Download, t.speedField,
                             if (p.speedKbps >= 0) p.speedHuman else t.speedNotMeasured,
                             speedColor(p.speedKbps),
+                        )
+                        DetailRow(
+                            Icons.Filled.Upload, t.upField,
+                            if (p.upKbps >= 0) p.upHuman else t.speedNotMeasured,
+                            speedColor(p.upKbps),
                         )
                         if (p.speedSamples > 0 || p.stalls > 0) {
                             DetailRow(Icons.Filled.NetworkCheck, " ", t.speedSamples(p.speedSamples, p.stalls), AppColors.onSurfaceMuted)

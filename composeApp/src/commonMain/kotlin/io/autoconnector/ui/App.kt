@@ -295,6 +295,10 @@ fun App(engine: Engine) {
                             onClick = { detail = it },
                             onQuickOpen = { item -> engine.tgLink(item.id)?.let(engine::openLink) },
                             onUseInRelay = { item -> engine.useInRelay(item.id) },
+                            onAddTopToTelegram = { list -> engine.addToTelegram(list.map { it.id }) },
+                            onCancelTelegramAdd = { engine.cancelTelegramAdd() },
+                            tgAddDone = state.tgAddDone,
+                            tgAddTotal = state.tgAddTotal,
                             onCopyTop = { list ->
                                 val links = list.mapNotNull { engine.tgLink(it.id) }
                                 if (links.isNotEmpty()) engine.copyToClipboard(links.joinToString("\n"))

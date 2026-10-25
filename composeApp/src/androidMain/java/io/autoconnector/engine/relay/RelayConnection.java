@@ -1063,6 +1063,7 @@ public final class RelayConnection implements Runnable {
                     if (upDirection) {
                         lc.firstUpAt.compareAndSet(0L, now);
                         lc.upWritesSinceDown.incrementAndGet();
+                        lc.meterUp.onBytes(n, now);
                     } else {
                         lc.lastDownAt.set(now);
                         lc.upWritesSinceDown.set(0);
@@ -1095,27 +1096,31 @@ public final class RelayConnection implements Runnable {
                     lastFlush = now;
                     // Live speed sample for long downloads, so the ranking reacts
                     // while the session is still running.
-                    if (!upDirection) recordSpeed(lc, now);
+                    recordSpeed(lc, now, upDirection);
                 }
             }
         } catch (IOException ignored) {
             // peer closed or network dropped
         } finally {
             flushBytesToProxy(accumForProxy);
-            if (!upDirection) recordSpeed(liveConnRefForLatency, System.currentTimeMillis());
+            recordSpeed(liveConnRefForLatency, System.currentTimeMillis(), upDirection);
             closeBoth();
         }
     }
 
-    /** Folds the connection's measured download speed into the SpeedBoard. Runs
-     *  on the down-pipe thread (the meter's owner). */
-    private void recordSpeed(RelayStats.LiveConn lc, long now) {
+    /** Folds the connection's measured download (down pipe) or upload (up pipe)
+     *  speed into the SpeedBoard. Each meter is only touched by its own pipe thread. */
+    private void recordSpeed(RelayStats.LiveConn lc, long now, boolean upDirection) {
         ProxyEntry p = upstreamProxy;
         if (lc == null || p == null) return;
         try {
-            double kbps = lc.meter.take(now);
-            if (kbps > 0) {
-                SpeedBoard.record(p, io.autoconnector.engine.core.NetworkMonitor.currentMode(), kbps);
+            io.autoconnector.engine.core.NetworkMode m = io.autoconnector.engine.core.NetworkMonitor.currentMode();
+            if (upDirection) {
+                double kbps = lc.meterUp.take(now);
+                if (kbps > 0) SpeedBoard.recordUp(p, m, kbps);
+            } else {
+                double kbps = lc.meter.take(now);
+                if (kbps > 0) SpeedBoard.record(p, m, kbps);
             }
         } catch (Throwable ignored) {}
     }

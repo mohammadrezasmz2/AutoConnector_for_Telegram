@@ -88,6 +88,9 @@ data class CatalogItem(
     val coolingDown: Boolean = false,
     // The relay's current ACTIVE host: every Telegram socket goes through it.
     val activeInRelay: Boolean = false,
+    // Real Telegram UPLOAD speed through this host (KB/s, -1 = not measured yet).
+    val upKbps: Int = -1,
+    val upHuman: String = "",
 )
 
 data class SourceItem(
@@ -452,6 +455,9 @@ data class EngineState(
     val autoTuneSummary: String = "",
     // True while Telegram is downloading through the relay (scan is throttled).
     val tgBusy: Boolean = false,
+    // "Add top N to Telegram": how many proxies are queued in total / already opened.
+    val tgAddTotal: Int = 0,
+    val tgAddDone: Int = 0,
 ) {
     // Identity-based equals is fine and avoids the array-equals boilerplate;
     // every tick produces a fresh instance anyway.
@@ -659,5 +665,10 @@ interface Engine {
     /** Make this host the relay's active upstream right now (auto-switches away
      *  again if it fails or turns out slow — unlike a pin). */
     fun useInRelay(id: Long) {}
+
+    /** Adds these proxies to Telegram one after another: opens the first now and
+     *  each next one when the user comes back to this app from Telegram. */
+    fun addToTelegram(ids: List<Long>) { ids.firstOrNull()?.let { id -> tgLink(id)?.let { openLink(it) } } }
+    fun cancelTelegramAdd() {}
     fun stopHostTest() {}
 }

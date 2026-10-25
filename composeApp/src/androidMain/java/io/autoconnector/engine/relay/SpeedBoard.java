@@ -45,6 +45,10 @@ public final class SpeedBoard {
         public volatile int stalls;
         public volatile long lastAt;
         public volatile long lastStallAt;
+        /** Upload speed (Telegram → upstream) EWMA, KB/s, and its sample count. */
+        public volatile double upKbps;
+        public volatile int upSamples;
+        public volatile long upLastAt;
         /** The most recent single session sample (not smoothed) and its time. */
         public volatile double lastSampleKbps = -1;
         public volatile long lastSampleAt;
@@ -52,6 +56,17 @@ public final class SpeedBoard {
         Stat(long proxyId, String mode) {
             this.proxyId = proxyId;
             this.mode = mode;
+        }
+
+        /** Upload speed for display/ranking, discounted like {@link #effective}. */
+        public double effectiveUp(long now) {
+            if (upSamples <= 0) return -1;
+            double v = upKbps;
+            long age = now - upLastAt;
+            if (age > 24 * 3_600_000L) v *= 0.5;
+            else if (age > 6 * 3_600_000L) v *= 0.75;
+            if (lastStallAt > 0 && now - lastStallAt < STALL_MEMORY_MS) v *= 0.25;
+            return v;
         }
 
         /** Speed used for ranking: EWMA, discounted for staleness and stalls. */
@@ -95,6 +110,9 @@ public final class SpeedBoard {
                     st.stalls = r.stalls;
                     st.lastAt = r.lastAt;
                     st.lastStallAt = r.lastStallAt;
+                    st.upKbps = r.upKbps;
+                    st.upSamples = r.upSamples;
+                    st.upLastAt = r.upLastAt;
                     STATS.put(key(st.proxyId, st.mode), st);
                 }
             } catch (Throwable ignored) {}
@@ -144,6 +162,19 @@ public final class SpeedBoard {
         AutoTuner.onSpeedSample(kbps);
     }
 
+    /** Folds one measured UPLOAD speed (Telegram → upstream) into the record. */
+    public static void recordUp(ProxyEntry p, NetworkMode mode, double kbps) {
+        if (p == null || p.id <= 0 || !(kbps > 0)) return;
+        long now = System.currentTimeMillis();
+        Stat st = stat(p, mode, true);
+        synchronized (st) {
+            st.upKbps = st.upSamples == 0 ? kbps : st.upKbps * 0.6 + kbps * 0.4;
+            st.upSamples++;
+            st.upLastAt = now;
+        }
+        persist(st);
+    }
+
     /** Records a stall / dead-upstream event: the host is demoted for a while. */
     public static void stall(ProxyEntry p, NetworkMode mode) {
         if (p == null || p.id <= 0) return;
@@ -170,13 +201,14 @@ public final class SpeedBoard {
     private static void persist(Stat st) {
         final ProxyStore s = store;
         if (s == null) return;
-        final double kbps = st.kbps;
-        final int samples = st.samples, stalls = st.stalls;
-        final long lastAt = st.lastAt, lastStallAt = st.lastStallAt;
+        final double kbps = st.kbps, upKbps = st.upKbps;
+        final int samples = st.samples, stalls = st.stalls, upSamples = st.upSamples;
+        final long lastAt = st.lastAt, lastStallAt = st.lastStallAt, upLastAt = st.upLastAt;
         try {
             PERSIST.submit(() -> {
                 try {
-                    s.saveSpeed(st.proxyId, st.mode, kbps, samples, stalls, lastAt, lastStallAt);
+                    s.saveSpeed(st.proxyId, st.mode, kbps, samples, stalls, lastAt, lastStallAt,
+                            upKbps, upSamples, upLastAt);
                 } catch (Throwable ignored) {}
             });
         } catch (Throwable ignored) {}

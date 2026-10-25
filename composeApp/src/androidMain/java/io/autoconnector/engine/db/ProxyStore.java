@@ -28,7 +28,7 @@ import java.util.List;
 public class ProxyStore extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "autoconnector.db";
-    private static final int DB_VERSION = 14;
+    private static final int DB_VERSION = 15;
     /** Consecutive real-Telegram relay failures before a host is put on cooldown. */
     private static final int COOL_AFTER = 3;
 
@@ -181,6 +181,9 @@ public class ProxyStore extends SQLiteOpenHelper {
                 + "stalls INTEGER NOT NULL DEFAULT 0,"
                 + "last_at INTEGER NOT NULL DEFAULT 0,"
                 + "last_stall_at INTEGER NOT NULL DEFAULT 0,"
+                + "up_kbps REAL NOT NULL DEFAULT 0,"
+                + "up_samples INTEGER NOT NULL DEFAULT 0,"
+                + "up_last_at INTEGER NOT NULL DEFAULT 0,"
                 + "PRIMARY KEY (proxy_id, mode))");
     }
 
@@ -272,8 +275,14 @@ public class ProxyStore extends SQLiteOpenHelper {
             }
         }
         if (oldV < 14) {
-            // Real-Telegram download-speed ranking (SpeedBoard).
+            // Real-Telegram download-speed ranking (SpeedBoard) — created with
+            // the upload columns already in place.
             createSpeedTable(db);
+        } else if (oldV < 15) {
+            // v15: upload-speed columns.
+            db.execSQL("ALTER TABLE " + SPD + " ADD COLUMN up_kbps REAL NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE " + SPD + " ADD COLUMN up_samples INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE " + SPD + " ADD COLUMN up_last_at INTEGER NOT NULL DEFAULT 0");
         }
     }
 
@@ -1486,11 +1495,15 @@ public class ProxyStore extends SQLiteOpenHelper {
         public int stalls;
         public long lastAt;
         public long lastStallAt;
+        public double upKbps;
+        public int upSamples;
+        public long upLastAt;
     }
 
     /** Upserts one (proxy, mode) speed row. Called off the relay hot path. */
     public void saveSpeed(long proxyId, String modeCode, double kbps, int samples,
-                          int stalls, long lastAt, long lastStallAt) {
+                          int stalls, long lastAt, long lastStallAt,
+                          double upKbps, int upSamples, long upLastAt) {
         ContentValues v = new ContentValues();
         v.put("proxy_id", proxyId);
         v.put("mode", modeCode);
@@ -1499,6 +1512,9 @@ public class ProxyStore extends SQLiteOpenHelper {
         v.put("stalls", stalls);
         v.put("last_at", lastAt);
         v.put("last_stall_at", lastStallAt);
+        v.put("up_kbps", upKbps);
+        v.put("up_samples", upSamples);
+        v.put("up_last_at", upLastAt);
         getWritableDatabase().insertWithOnConflict(SPD, null, v, SQLiteDatabase.CONFLICT_REPLACE);
     }
 
@@ -1507,7 +1523,8 @@ public class ProxyStore extends SQLiteOpenHelper {
         List<SpeedRow> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
                 "SELECT p.*, s.mode AS s_mode, s.kbps AS s_kbps, s.samples AS s_samples,"
-                        + " s.stalls AS s_stalls, s.last_at AS s_last_at, s.last_stall_at AS s_last_stall_at"
+                        + " s.stalls AS s_stalls, s.last_at AS s_last_at, s.last_stall_at AS s_last_stall_at,"
+                        + " s.up_kbps AS s_up_kbps, s.up_samples AS s_up_samples, s.up_last_at AS s_up_last_at"
                         + " FROM " + SPD + " s JOIN " + T + " p ON p.id=s.proxy_id", null);
         try {
             while (c.moveToNext()) {
@@ -1519,6 +1536,9 @@ public class ProxyStore extends SQLiteOpenHelper {
                 r.stalls = c.getInt(c.getColumnIndexOrThrow("s_stalls"));
                 r.lastAt = c.getLong(c.getColumnIndexOrThrow("s_last_at"));
                 r.lastStallAt = c.getLong(c.getColumnIndexOrThrow("s_last_stall_at"));
+                r.upKbps = c.getDouble(c.getColumnIndexOrThrow("s_up_kbps"));
+                r.upSamples = c.getInt(c.getColumnIndexOrThrow("s_up_samples"));
+                r.upLastAt = c.getLong(c.getColumnIndexOrThrow("s_up_last_at"));
                 out.add(r);
             }
         } finally {

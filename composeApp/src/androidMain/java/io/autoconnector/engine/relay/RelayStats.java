@@ -65,6 +65,8 @@ public final class RelayStats {
         public volatile boolean fromPrewarm;
         /** Real download-speed meter for this connection (upstream → Telegram). */
         public final SpeedMeter meter = new SpeedMeter();
+        /** Real upload-speed meter for this connection (Telegram → upstream). */
+        public final SpeedMeter meterUp = new SpeedMeter();
         /** Wall-clock ms of the first Telegram → upstream byte (0 = none yet). */
         public final AtomicLong firstUpAt = new AtomicLong();
         /** Wall-clock ms of the last upstream → Telegram byte (0 = none yet). */

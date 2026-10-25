@@ -83,7 +83,7 @@ private const val LOG_CAP_SCAN = 300
 private const val LOG_CAP_SUBS = 150
 // Catalog: how many candidate rows to fetch per mode, and how many to show.
 private const val CATALOG_POOL = 300
-private const val CATALOG_SHOWN = 60
+private const val CATALOG_SHOWN = 80
 
 /** Android implementation of [Engine], backed by the existing Java relay engine. */
 class AndroidEngine(context: Context) : Engine {
@@ -717,6 +717,7 @@ class AndroidEngine(context: Context) : Engine {
         val alive = r.modeLastCheck > 0 && r.modeAlive
         val st = SpeedBoard.get(p.id, speedMode)
         val eff = st?.effective(now) ?: -1.0
+        val effUp = st?.effectiveUp(now) ?: -1.0
         return CatalogItem(
             id = p.id,
             host = hostLabel(p),
@@ -748,6 +749,8 @@ class AndroidEngine(context: Context) : Engine {
             speedSamples = st?.samples ?: 0,
             stalls = st?.stalls ?: 0,
             coolingDown = r.coolUntil > now,
+            upKbps = if (effUp >= 0) effUp.toInt() else -1,
+            upHuman = if (effUp >= 0) AutoTuner.fmtKbps(effUp) else "",
         )
     }
 
@@ -955,6 +958,49 @@ class AndroidEngine(context: Context) : Engine {
      *  heavy DB work while the UI isn't visible (battery). */
     override fun setUiActive(active: Boolean) {
         uiActive = active
+        // Back from Telegram → open the next queued proxy of "Add top N".
+        if (active) scope.launch {
+            delay(700L)
+            openNextTelegramAdd()
+        }
+    }
+
+    // --- "Add top N to Telegram": one tg:// link at a time ------------------
+    private val tgAddQueue = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    @Volatile private var tgAddTotal = 0
+    @Volatile private var tgAddDone = 0
+
+    override fun addToTelegram(ids: List<Long>) {
+        tgAddQueue.clear()
+        val links = ids.mapNotNull { tgLink(it) }
+        if (links.isEmpty()) return
+        tgAddQueue.addAll(links)
+        tgAddTotal = links.size
+        tgAddDone = 0
+        appendLog("✈ adding ${links.size} proxies to Telegram — tap Connect in Telegram, then come back here for the next one")
+        openNextTelegramAdd()
+    }
+
+    override fun cancelTelegramAdd() {
+        tgAddQueue.clear()
+        tgAddTotal = 0
+        tgAddDone = 0
+        pushImmediate()
+    }
+
+    private fun openNextTelegramAdd() {
+        val next = tgAddQueue.poll()
+        if (next == null) {
+            if (tgAddTotal > 0 && tgAddDone >= tgAddTotal) {
+                appendLog("✓ added $tgAddTotal proxies to Telegram")
+                tgAddTotal = 0; tgAddDone = 0
+            }
+            pushImmediate()
+            return
+        }
+        tgAddDone++
+        openLink(next)
+        pushImmediate()
     }
 
     private fun pushImmediate() = try { pushState() } catch (_: Throwable) {}
@@ -1176,6 +1222,8 @@ class AndroidEngine(context: Context) : Engine {
             testSummary = io.autoconnector.engine.check.HostTester.summary(),
             autoTuneSummary = AutoTuner.summary(),
             tgBusy = TrafficGovernor.busy(),
+            tgAddTotal = tgAddTotal,
+            tgAddDone = tgAddDone,
             socketsTgToConnector = maxOf(0, conns.size + pending),
             socketsConnectorToProxy = conns.size,
             currentProxy = currentProxy,
