@@ -39,3 +39,7 @@ hs_err_pid*.log
 # Local credentials (server-only, never commit)
 .creds.local
 
+
+# covert bootstrap private key (never commit)
+tools/club_key.bin
+tools/club_config.json

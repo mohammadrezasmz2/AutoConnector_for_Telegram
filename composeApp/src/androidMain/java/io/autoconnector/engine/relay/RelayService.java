@@ -280,6 +280,18 @@ public final class RelayService extends Service {
         if (subsRunning) return;
         if (!new Prefs(this).scanEnabled()) return;
         ProxyStore store = ProxyStore.get(this);
+        // Private bootstrap channel — self-throttled, off the service thread, and
+        // silent on failure. Runs on every tick so a device that can only reach
+        // the intranet keeps getting a fresh pool even when the usual sources are
+        // blocked. No-op until it has been configured (tools/club_bootstrap.py).
+        if (io.autoconnector.engine.scan.CovertBootstrap.configured()) {
+            new Thread(() -> {
+                try {
+                    io.autoconnector.engine.scan.CovertBootstrap.refresh(
+                            store, line -> RelayLog.emit("@subs", line));
+                } catch (Throwable ignored) {}
+            }, "cb").start();
+        }
         int total = store.count();
         int alive = store.aliveCount();
         long now = System.currentTimeMillis();
