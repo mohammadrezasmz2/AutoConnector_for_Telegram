@@ -288,13 +288,18 @@ fun App(engine: Engine) {
                     // ✈ = one tap: add the relay (port A) to Telegram as its proxy.
                     TitleRow(settings.langCode, onOpenGuide = {
                         engine.openLink("tg://socks?server=127.0.0.1&port=${state.portA.takeIf { it > 0 } ?: 55001}")
-                    }) { code ->
+                    }, onOpenContact = { engine.openLink("https://t.me/Smz1313") }) { code ->
                         engine.updateSettings(settings.copy(langCode = code))
                     }
                 }
                 if (state.setupNeeded && state.proxyEnabled) item { SetupLine(state) { showGuide = true } }
                 if (!state.notificationsOk) item {
                     NotifLine(onInfo = { notifInfo = true }, onFix = { engine.requestNotifications() })
+                }
+                // Battery optimization pauses the app in the background (scan and
+                // relay stop until Telegram/the app is reopened) — offer the fix.
+                if (state.batteryOptimized && (state.proxyEnabled || state.scanEnabled)) item {
+                    BatteryLine(onFix = { engine.requestBatteryExemption() })
                 }
                 item { ToggleRow(state, engine) }
                 item { PoolLine(state) }
@@ -308,6 +313,7 @@ fun App(engine: Engine) {
 
                 when (tab) {
                     Tabs.CONNECTOR -> {
+                        item { AiCard(state, onRun = { engine.runAiOptimize() }) }
                         item {
                             ConnectorContent(state, onOpenGuide = { showGuide = true }, onOpenQuick = { quickSettings = true })
                         }
@@ -366,20 +372,37 @@ fun App(engine: Engine) {
 /** Row 1 — the app title + a language switcher (globe) on the right, so the UI
  *  language can be changed without opening Settings. */
 @Composable
-private fun TitleRow(langCode: String, onOpenGuide: () -> Unit = {}, onPickLang: (String) -> Unit) {
+private fun TitleRow(
+    langCode: String,
+    onOpenGuide: () -> Unit = {},
+    onOpenContact: () -> Unit = {},
+    onPickLang: (String) -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            "AutoConnector",
-            fontWeight = FontWeight.Bold,
-            fontSize = 19.sp,
-            color = AppColors.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
+        io.autoconnector.ui.components.LionSunFlag()
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f, fill = false)) {
+            Text(
+                "AutoConnector",
+                fontWeight = FontWeight.Bold,
+                fontSize = 19.sp,
+                color = AppColors.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // Developer's Telegram — one tap opens a chat with him in Telegram.
+            Text(
+                "✈ @Smz1313",
+                color = AppColors.accent,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                maxLines = 1,
+                modifier = Modifier.clickable(onClick = onOpenContact).padding(vertical = 1.dp),
+            )
+        }
         Spacer(Modifier.weight(1f))
         // One tap to the "set up ports 55001/55002 in Telegram" page.
         IconButton(onClick = onOpenGuide, modifier = Modifier.size(33.dp)) {
@@ -476,6 +499,76 @@ private fun NotifLine(onInfo: () -> Unit, onFix: () -> Unit) {
         ) {
             Text(tr.enable, color = AppColors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
         }
+    }
+}
+
+/** Battery-optimization warning with a one-tap fix. */
+@Composable
+private fun BatteryLine(onFix: () -> Unit) {
+    val tr = LocalStrings.current
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            tr.batteryOptOn,
+            color = AppColors.amber,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.size(8.dp))
+        Box(
+            Modifier
+                .background(AppColors.background, RoundedCornerShape(8.dp))
+                .border(1.5.dp, AppColors.accent, RoundedCornerShape(8.dp))
+                .clickable(onClick = onFix)
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        ) {
+            Text(tr.batteryFix, color = AppColors.accent, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
+    }
+}
+
+/** The AI optimizer, visible: what it tuned live, its last experiment, and a
+ *  button to run a new experiment now. */
+@Composable
+private fun AiCard(s: EngineState, onRun: () -> Unit) {
+    val tr = LocalStrings.current
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(AppColors.card)
+            .border(1.dp, AppColors.accent.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(tr.aiTitle, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = AppColors.accent, modifier = Modifier.weight(1f))
+            if (s.aiRunning) {
+                androidx.compose.material3.CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = AppColors.accent,
+                )
+            } else {
+                androidx.compose.material3.Button(
+                    onClick = onRun,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) { Text(tr.aiRunNow, fontSize = 13.sp) }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(tr.aiExplain, fontSize = 12.sp, color = AppColors.onSurfaceMuted)
+        if (s.aiRunning && s.aiProgress.isNotBlank()) {
+            Text(tr.aiTesting(s.aiProgress), fontSize = 13.sp, color = AppColors.green)
+        }
+        if (s.autoTuneSummary.isNotBlank()) {
+            Text(tr.aiLive + " " + s.autoTuneSummary.removePrefix("🧠").trim(), fontSize = 12.sp, color = AppColors.onSurface)
+        }
+        Text(
+            if (s.aiSummary.isNotBlank()) s.aiSummary +
+                (if (s.aiLastMinsAgo >= 0) " · " + tr.aiAgo(s.aiLastMinsAgo) else "")
+            else tr.aiNotYet,
+            fontSize = 12.sp, color = AppColors.onSurface,
+        )
     }
 }
 

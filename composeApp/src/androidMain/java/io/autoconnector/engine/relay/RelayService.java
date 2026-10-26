@@ -95,6 +95,24 @@ public final class RelayService extends Service {
         }
     };
 
+    // --- AI optimizer: hourly (and after a network change) while Auto-tune is on.
+    private static final long AI_INTERVAL_MS = 60 * 60_000L;
+    private final Runnable aiTask = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                Prefs p = new Prefs(RelayService.this);
+                if (p.autoTune() && (p.scanEnabled() || p.appEnabled())) {
+                    Thread t = new Thread(() -> io.autoconnector.engine.check.AutoOptimizer.run(
+                            RelayService.this, RelayLog::emit), "ai-optimizer");
+                    t.setDaemon(true);
+                    t.start();
+                }
+            } catch (Throwable ignored) {}
+            if (running) svc.postDelayed(this, AI_INTERVAL_MS);
+        }
+    };
+
     private void runSpeedTest() {
         if (!speedTestBusy.compareAndSet(false, true)) return;
         try {
@@ -538,6 +556,9 @@ public final class RelayService extends Service {
                                 + " · refreshing sticky hosts and checking the top");
                         if (manager != null) manager.refreshStickies();
                         if (new Prefs(this).scanEnabled()) { svc.removeCallbacks(mainsCheckTask); svc.post(mainsCheckTask); }
+                        // New network → re-run the AI optimizer once the pool is re-graded.
+                        svc.removeCallbacks(aiTask);
+                        svc.postDelayed(aiTask, 2 * 60_000L);
                     };
                     nm.addListener(netListener);
                 }
@@ -586,6 +607,9 @@ public final class RelayService extends Service {
         svc.removeCallbacks(sparkTick);
         svc.removeCallbacks(subsRefillTask);
         svc.removeCallbacks(speedTestTask);
+        svc.removeCallbacks(aiTask);
+        // First AI optimization 3 min after start (the pool needs live hosts).
+        if (scanOn || proxyOn) svc.postDelayed(aiTask, 3 * 60_000L);
         if (scanOn) {
             svc.post(mainsCheckTask);
             svc.post(subsRefillTask);

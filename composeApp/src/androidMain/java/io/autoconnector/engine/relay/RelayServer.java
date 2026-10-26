@@ -65,6 +65,8 @@ public final class RelayServer {
                         // own port-failover and we surface the load to the UI.
                         try { client.close(); } catch (IOException ignored) {}
                         listener.event("relay pool overloaded — dropped accept on " + port);
+                        RelayLog.emit("⚠ relay busy (" + AppExecutors.RELAY.getActiveCount()
+                                + " sockets) — dropped a new Telegram socket on " + port);
                     }
                 } catch (IOException e) {
                     if (running) listener.event("accept[" + port + "]: " + e.getMessage());

@@ -469,6 +469,13 @@ data class EngineState(
     val testSummary: String = "",
     // Smart auto-tune: one-line summary of what it currently chose ("" = off / no data).
     val autoTuneSummary: String = "",
+    // AI optimizer (tests connection settings for real and applies the best).
+    val aiRunning: Boolean = false,
+    val aiSummary: String = "",
+    val aiProgress: String = "",
+    val aiLastMinsAgo: Long = -1,
+    // Android battery optimization still on for this app (it may be paused).
+    val batteryOptimized: Boolean = false,
     // True while Telegram is downloading through the relay (scan is throttled).
     val tgBusy: Boolean = false,
     // "Add top N to Telegram": how many proxies are queued in total / already opened.
@@ -690,6 +697,12 @@ interface Engine {
     /** Writes the FULL log (all tabs, since start) plus a diagnostics snapshot to
      *  a text file and opens the system share sheet (Android). */
     fun shareLogs() {}
+
+    /** Runs the AI optimizer now (tests settings on real proxies, applies the best). */
+    fun runAiOptimize() {}
+
+    /** Asks Android to stop battery-optimizing (pausing) this app. */
+    fun requestBatteryExemption() {}
 
     /** QR code of [text] as rows of dark/light modules (null = not supported here). */
     fun qrMatrix(text: String): List<BooleanArray>? = null

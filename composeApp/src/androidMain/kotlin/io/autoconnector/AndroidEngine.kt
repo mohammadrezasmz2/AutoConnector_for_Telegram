@@ -1120,6 +1120,24 @@ class AndroidEngine(context: Context) : Engine {
         }
     }
 
+    override fun runAiOptimize() {
+        scope.launch(Dispatchers.IO) {
+            io.autoconnector.engine.check.AutoOptimizer.run(ctx) { RelayLog.emit(it) }
+        }
+    }
+
+    override fun requestBatteryExemption() {
+        try {
+            val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + ctx.packageName))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(i)
+        } catch (_: Throwable) {
+            try {
+                ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Throwable) {}
+        }
+    }
+
     /** Header with the full engine state + every log line since start. */
     private fun buildDiagnostics(): String {
         val sb = StringBuilder(1 shl 20)
@@ -1420,6 +1438,16 @@ class AndroidEngine(context: Context) : Engine {
             testRunning = io.autoconnector.engine.check.HostTester.running(),
             testSummary = io.autoconnector.engine.check.HostTester.summary(),
             autoTuneSummary = AutoTuner.summary(),
+            aiRunning = io.autoconnector.engine.check.AutoOptimizer.isRunning(),
+            aiSummary = io.autoconnector.engine.check.AutoOptimizer.summary(),
+            aiProgress = io.autoconnector.engine.check.AutoOptimizer.progress(),
+            aiLastMinsAgo = io.autoconnector.engine.check.AutoOptimizer.lastRunAt().let {
+                if (it > 0) (now - it) / 60_000L else -1L
+            },
+            batteryOptimized = try {
+                val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                !pm.isIgnoringBatteryOptimizations(ctx.packageName)
+            } catch (_: Throwable) { false },
             tgBusy = TrafficGovernor.busy(),
             tgAddTotal = tgAddTotal,
             tgAddDone = tgAddDone,

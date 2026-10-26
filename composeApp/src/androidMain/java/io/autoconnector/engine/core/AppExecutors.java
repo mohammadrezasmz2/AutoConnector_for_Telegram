@@ -49,7 +49,10 @@ public final class AppExecutors {
      *  AbortPolicy: a stuck upstream causes new accepts to be rejected
      *  (and the accept thread closes the Telegram socket) instead of
      *  growing the pool. */
-    public static final ThreadPoolExecutor RELAY = relayPool("kbh-relay", 64);
+    // 192: Telegram can hold many sockets at once (media + several DCs); with 64
+    // a burst of slow/stuck sockets could fill the pool and new Telegram sockets
+    // were refused until Telegram was restarted.
+    public static final ThreadPoolExecutor RELAY = relayPool("kbh-relay", 192);
 
     // ----------------------------------------------------------------
 
