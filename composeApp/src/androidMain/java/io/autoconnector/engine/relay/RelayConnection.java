@@ -447,6 +447,12 @@ public final class RelayConnection implements Runnable {
                         + " · by: " + why);
                 long upB = (liveConnRef != null) ? liveConnRef.bytesUp.get() : 0;
                 long downB = (liveConnRef != null) ? liveConnRef.bytesDown.get() : 0;
+                // The proxy itself hung up (EOF / reset) — count it against the host.
+                if (liveConnRef != null && liveConnRef.killReason == null) {
+                    String cb = liveConnRef.closedBy.get();
+                    boolean upstreamClosed = cb != null && (cb.startsWith("upstream closed") || cb.startsWith("upstream side"));
+                    if (upstreamClosed) manager.onUpstreamHangup(upstreamProxy, downB, dur);
+                }
                 NetLog.close(sess(), "durMs=" + dur + " up=" + upB + " down=" + downB);
             }
             if (!acceptingDecremented) RelayStats.accepting.decrementAndGet();

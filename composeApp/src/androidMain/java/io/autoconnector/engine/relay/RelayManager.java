@@ -350,6 +350,37 @@ public final class RelayManager {
         }
     }
 
+    // --- Unstable active host --------------------------------------------------
+    // A log showed the active host closing Telegram's sockets again and again
+    // (EOF right after the first reply, or after a few KB) for 13 minutes while
+    // it stayed active, because no single socket looked "dead". Three hang-ups by
+    // the proxy within 3 minutes now drop it as the active host.
+    private static final int HANGUPS_TO_DROP = 3;
+    private static final long HANGUP_WINDOW_MS = 3 * 60_000L;
+    private final java.util.ArrayDeque<Long> hangups = new java.util.ArrayDeque<>();
+    private long hangupsFor = 0;
+
+    /** The proxy (not Telegram) ended a session. */
+    public void onUpstreamHangup(ProxyEntry p, long downBytes, long durMs) {
+        ProxyEntry act = active;
+        if (p == null || act == null || act.id != p.id || pinned != null) return;
+        // A long, productive session ending is normal; short or near-empty ones aren't.
+        if (downBytes > 2 * 1024 * 1024 || durMs > 5 * 60_000L) return;
+        long now = System.currentTimeMillis();
+        synchronized (hangups) {
+            if (hangupsFor != p.id) { hangups.clear(); hangupsFor = p.id; }
+            hangups.addLast(now);
+            while (!hangups.isEmpty() && now - hangups.peekFirst() > HANGUP_WINDOW_MS) hangups.pollFirst();
+            if (hangups.size() < HANGUPS_TO_DROP) return;
+            hangups.clear();
+        }
+        io.autoconnector.engine.core.NetworkMode mode = io.autoconnector.engine.core.NetworkMonitor.currentMode();
+        SpeedBoard.stall(p, mode);
+        try { store.markRelayFailure(p.id, mode, now); } catch (Throwable ignored) {}
+        clearActive(p.id, "unstable: the proxy closed Telegram's connection " + HANGUPS_TO_DROP
+                + "× in " + (HANGUP_WINDOW_MS / 60_000L) + " min");
+    }
+
     /** Id of the current active upstream (0 = none), for the UI. */
     public static long currentActiveId() {
         RelayManager m = INSTANCE;
