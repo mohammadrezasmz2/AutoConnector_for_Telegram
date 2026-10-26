@@ -7,3 +7,6 @@ import io.autoconnector.R
 
 @Composable
 actual fun appLogo(): Painter = painterResource(R.drawable.app_logo)
+
+@Composable
+actual fun flagLionSun(): Painter = painterResource(R.drawable.flag_lion_sun)

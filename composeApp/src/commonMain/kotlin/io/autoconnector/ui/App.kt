@@ -290,7 +290,7 @@ fun App(engine: Engine) {
                     // ✈ = one tap: add the relay (port A) to Telegram as its proxy.
                     TitleRow(settings.langCode, onOpenGuide = {
                         engine.openLink("tg://socks?server=127.0.0.1&port=${state.portA.takeIf { it > 0 } ?: 55001}")
-                    }, onOpenContact = { engine.openLink("https://t.me/Smz1313") },
+                    }, onOpenContact = { engine.openLink("https://t.me/Javidan2030") },
                         dark = dark,
                         // Explicit light/dark (never "auto"), so it stays the same
                         // after restarts until the user switches it again.
@@ -391,7 +391,14 @@ private fun TitleRow(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        io.autoconnector.ui.components.LionSunFlag()
+        // Lion and Sun flag (the real artwork), small.
+        androidx.compose.foundation.Image(
+            painter = flagLionSun(),
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier.size(width = 30.dp, height = 17.dp)
+                .clip(RoundedCornerShape(2.dp)),
+        )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f, fill = false)) {
             Text(
@@ -402,9 +409,9 @@ private fun TitleRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // Developer's Telegram — one tap opens a chat with him in Telegram.
+            // Support contact — one tap opens a chat in Telegram.
             Text(
-                "✈ @Smz1313",
+                "🧑‍💻 @Javidan2030",
                 color = AppColors.accent,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -574,12 +581,8 @@ private fun AiCard(s: EngineState, onRun: () -> Unit) {
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(tr.aiExplain, fontSize = 12.sp, color = AppColors.onSurfaceMuted)
         if (s.aiRunning && s.aiProgress.isNotBlank()) {
             Text(tr.aiTesting(s.aiProgress), fontSize = 13.sp, color = AppColors.green)
-        }
-        if (s.autoTuneSummary.isNotBlank()) {
-            Text(tr.aiLive + " " + s.autoTuneSummary.removePrefix("🧠").trim(), fontSize = 12.sp, color = AppColors.onSurface)
         }
         Text(
             if (s.aiSummary.isNotBlank()) s.aiSummary +

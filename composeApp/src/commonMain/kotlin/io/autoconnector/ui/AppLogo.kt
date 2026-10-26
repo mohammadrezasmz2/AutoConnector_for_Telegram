@@ -11,3 +11,7 @@ import androidx.compose.ui.graphics.painter.Painter
  */
 @Composable
 expect fun appLogo(): Painter
+
+/** The Lion and Sun flag shown next to the app name. */
+@Composable
+expect fun flagLionSun(): Painter

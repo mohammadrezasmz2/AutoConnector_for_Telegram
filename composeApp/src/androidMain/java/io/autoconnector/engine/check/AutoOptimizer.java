@@ -35,7 +35,7 @@ public final class AutoOptimizer {
     public interface Log { void line(String s); }
 
     private static final HandshakeMode[] CANDIDATES = {
-            HandshakeMode.NORMAL, HandshakeMode.MIMIC_CHROME, HandshakeMode.MIMIC_FIREFOX,
+            HandshakeMode.AUTO_RANDOM, HandshakeMode.NORMAL, HandshakeMode.MIMIC_CHROME, HandshakeMode.MIMIC_FIREFOX,
             HandshakeMode.MIMIC_SAFARI, HandshakeMode.BIG_PADDING, HandshakeMode.SEGMENTED,
             HandshakeMode.SPLIT_BEFORE_SNI, HandshakeMode.RANDOM_PADDING,
     };
@@ -79,15 +79,23 @@ public final class AutoOptimizer {
             Prefs prefs = new Prefs(ctx);
             ProxyStore store = ProxyStore.get(ctx);
             NetworkMode mode = NetworkMonitor.currentMode();
+            // Test hosts: the ones carrying Telegram right now (active + reserves)
+            // first, then the best-rated FakeTLS hosts — the methods only differ
+            // for FakeTLS ("ee") proxies.
+            List<ProxyEntry> hosts = new ArrayList<>();
+            io.autoconnector.engine.relay.RelayManager rm = io.autoconnector.engine.relay.RelayManager.INSTANCE;
+            if (rm != null) {
+                if (rm.activeEntry() != null && rm.activeEntry().isFakeTls()) hosts.add(rm.activeEntry());
+                for (ProxyEntry p : rm.reserveEntries()) if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
+            }
             List<ProxyEntry> top = mode != NetworkMode.UNKNOWN
                     ? store.topAliveForMode(mode, 80) : store.topAlive(80);
-            List<ProxyEntry> hosts = new ArrayList<>();
             for (ProxyEntry p : top) {
-                if (p.isFakeTls()) hosts.add(p);
                 if (hosts.size() >= HOSTS) break;
+                if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
             }
             if (hosts.size() < 4) {
-                summary = "🧠 Not enough live FakeTLS proxies yet to compare settings — will retry.";
+                summary = "🧠 Waiting for more live proxies";
                 log.line(summary);
                 return true;
             }
@@ -99,22 +107,15 @@ public final class AutoOptimizer {
                 step++;
                 progress = step + " / " + CANDIDATES.length + " · " + m.label;
                 Score sc = new Score(m);
-                List<Future<HealthChecker.Result>> fs = new ArrayList<>();
+                List<Future<Integer>> fs = new ArrayList<>();
                 for (ProxyEntry p : hosts) {
-                    fs.add(pool.submit(() -> {
-                        HealthChecker hc = new HealthChecker(3000, 6000);
-                        hc.setProbeMode(m);
-                        return hc.check(p);
-                    }));
+                    fs.add(pool.submit(() -> testOnce(p, m)));
                 }
-                for (Future<HealthChecker.Result> f : fs) {
+                for (Future<Integer> f : fs) {
                     sc.tried++;
                     try {
-                        HealthChecker.Result r = f.get(20, TimeUnit.SECONDS);
-                        if (r.grade == HealthChecker.Grade.FULL) {
-                            sc.ok++;
-                            if (r.rttMs > 0 && r.connectMs > 0) sc.ms.add(Math.max(1, r.rttMs - r.connectMs));
-                        }
+                        Integer ms = f.get(20, TimeUnit.SECONDS);
+                        if (ms != null && ms > 0) { sc.ok++; sc.ms.add(ms); }
                     } catch (Exception e) {
                         f.cancel(true);
                     }
@@ -128,20 +129,23 @@ public final class AutoOptimizer {
             HandshakeMode current = HandshakeMode.fromOrdinal(prefs.handshakeMode());
             Score cur = null;
             for (Score s : scores) if (s.mode == current) cur = s;
-            boolean apply = best != null && best.ok > 0
+            // Apply only a clear winner that works on a fair share of the hosts.
+            int need = Math.max(3, hosts.size() / 4);
+            boolean apply = best != null && best.ok >= need && best.mode != current
                     && (cur == null || best.ok > cur.ok
                         || (best.ok == cur.ok && best.median() < cur.median() * 0.85));
-            String bestTxt = best == null ? "—" : best.mode.label + " (" + best.ok + "/" + best.tried
-                    + " ok" + (best.ms.isEmpty() ? "" : ", " + best.median() + " ms") + ")";
+            String bestTxt = best == null || best.ok == 0 ? "—"
+                    : shortLabel(best.mode) + " " + best.ok + "/" + best.tried
+                      + (best.ms.isEmpty() ? "" : " · " + best.median() + " ms");
             if (apply) {
                 prefs.setHandshakeMode(best.mode.ordinal());
-                summary = "🧠 Best connection method: " + bestTxt + " — applied"
-                        + (cur != null ? " (was " + current.label + ": " + cur.ok + "/" + cur.tried + ")" : "");
+                summary = "✓ " + bestTxt + " — applied";
+            } else if (best != null && best.mode == current && best.ok > 0) {
+                summary = "✓ " + bestTxt + " — already in use";
             } else {
-                summary = "🧠 Best connection method: " + bestTxt + " — current setting "
-                        + current.label + " kept";
+                summary = "Best: " + bestTxt + " · kept " + shortLabel(current);
             }
-            log.line(summary);
+            log.line("🧠 AI optimizer: " + summary);
             return true;
         } catch (Throwable t) {
             summary = "🧠 Optimizer error: " + t.getClass().getSimpleName();
@@ -153,6 +157,39 @@ public final class AutoOptimizer {
             progress = "";
             RUNNING.set(false);
         }
+    }
+
+    /** One real connect through {@code p} with method {@code m} (exactly like the
+     *  relay does) + a Telegram request; returns the Telegram reply time in ms
+     *  (handshake + request), or -1 on failure. */
+    private static int testOnce(ProxyEntry p, HandshakeMode m) {
+        io.autoconnector.engine.relay.UpstreamConnector.Channel ch = null;
+        try {
+            ch = io.autoconnector.engine.relay.UpstreamConnector.connect(
+                    p, io.autoconnector.engine.net.Obfuscated2.TAG_INTERMEDIATE, 2, null, 443, 6000, m);
+            long t0 = System.nanoTime();
+            io.autoconnector.engine.net.MtHandshakeProbe.probe(
+                    new io.autoconnector.engine.net.IntermediateTransport(ch.in, ch.out, ch.obf));
+            int req = (int) ((System.nanoTime() - t0) / 1_000_000L);
+            int hs = (ch.totalMs > 0 && ch.connectMs >= 0) ? ch.totalMs - ch.connectMs : 0;
+            return Math.max(1, hs + req);
+        } catch (Throwable t) {
+            return -1;
+        } finally {
+            if (ch != null) try { ch.socket.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    private static boolean contains(List<ProxyEntry> l, ProxyEntry p) {
+        for (ProxyEntry x : l) if (x.id == p.id) return true;
+        return false;
+    }
+
+    /** "13 · Random padding" → "Random padding". */
+    private static String shortLabel(HandshakeMode m) {
+        String l = m.label;
+        int i = l.indexOf('·');
+        return i >= 0 ? l.substring(i + 1).trim() : l;
     }
 
     private AutoOptimizer() {}

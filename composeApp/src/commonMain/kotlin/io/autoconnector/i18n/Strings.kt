@@ -427,7 +427,7 @@ interface Strings {
     val aiExplain: String get() = "Tests connection settings on real proxies and applies the best one by itself (every hour and after a network change); timeouts and race width are tuned live."
     fun aiTesting(p: String): String = "Testing $p"
     val aiLive: String get() = "Live tuning:"
-    val aiNotYet: String get() = "First experiment runs a few minutes after start — or tap “Optimize now”."
+    val aiNotYet: String get() = "Starts by itself ~10 min after launch."
     fun aiAgo(m: Long): String = if (m <= 0) "just now" else "$m min ago"
     val scanSectionTitle: String get() = "🔍 Proxy scan (finds and tests proxies for the connector)"
     val aboutMyGithub: String get() = "GitHub"

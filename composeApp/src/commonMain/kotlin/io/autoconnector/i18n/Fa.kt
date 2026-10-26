@@ -503,7 +503,7 @@ object Fa : Strings {
     override val aiExplain = "تنظیمات اتصال را روی پروکسی‌های واقعی تست می‌کند و بهترین را خودش اعمال می‌کند (هر یک ساعت و بعد از تغییر شبکه)؛ تایم‌اوت و تعداد مسابقه هم لحظه‌ای تنظیم می‌شوند."
     override fun aiTesting(p: String) = "در حال تست $p"
     override val aiLive = "تنظیم لحظه‌ای:"
-    override val aiNotYet = "اولین آزمایش چند دقیقه بعد از شروع انجام می‌شود — یا «بهینه‌سازی کن» را بزنید."
+    override val aiNotYet = "حدود ۱۰ دقیقه بعد از شروع خودکار اجرا می‌شود."
     override fun aiAgo(m: Long) = if (m <= 0) "همین الان" else "$m دقیقه پیش"
     override val scanSectionTitle = "🔍 اسکن پروکسی (پیدا و تست کردن پروکسی برای اتصال)"
     override val aboutBasedOn = "بر پایهٔ پروژهٔ اصلی"

@@ -6,3 +6,6 @@ import androidx.compose.ui.res.painterResource
 
 @Composable
 actual fun appLogo(): Painter = painterResource("icons/tray.png")
+
+@Composable
+actual fun flagLionSun(): Painter = painterResource("icons/flag_lion_sun.png")

@@ -102,6 +102,13 @@ public final class RelayService extends Service {
         public void run() {
             try {
                 Prefs p = new Prefs(RelayService.this);
+                // Only once the first search has found enough live proxies.
+                int alive = 0;
+                try { alive = ProxyStore.get(RelayService.this).aliveCount(); } catch (Throwable ignored) {}
+                if (alive < 30) {
+                    if (running) svc.postDelayed(this, 5 * 60_000L);
+                    return;
+                }
                 if (p.autoTune() && (p.scanEnabled() || p.appEnabled())) {
                     Thread t = new Thread(() -> io.autoconnector.engine.check.AutoOptimizer.run(
                             RelayService.this, RelayLog::emit), "ai-optimizer");
@@ -558,7 +565,7 @@ public final class RelayService extends Service {
                         if (new Prefs(this).scanEnabled()) { svc.removeCallbacks(mainsCheckTask); svc.post(mainsCheckTask); }
                         // New network → re-run the AI optimizer once the pool is re-graded.
                         svc.removeCallbacks(aiTask);
-                        svc.postDelayed(aiTask, 2 * 60_000L);
+                        svc.postDelayed(aiTask, 10 * 60_000L);
                     };
                     nm.addListener(netListener);
                 }
@@ -608,8 +615,9 @@ public final class RelayService extends Service {
         svc.removeCallbacks(subsRefillTask);
         svc.removeCallbacks(speedTestTask);
         svc.removeCallbacks(aiTask);
-        // First AI optimization 3 min after start (the pool needs live hosts).
-        if (scanOn || proxyOn) svc.postDelayed(aiTask, 3 * 60_000L);
+        // First AI optimization ~10 min after start: after the first search has
+        // filled the pool, not right away.
+        if (scanOn || proxyOn) svc.postDelayed(aiTask, 10 * 60_000L);
         if (scanOn) {
             svc.post(mainsCheckTask);
             svc.post(subsRefillTask);
