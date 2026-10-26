@@ -104,6 +104,17 @@ jobs:
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/pub" && cp out/* "$RUNNER_TEMP/pub/" && cd "$RUNNER_TEMP/pub"
+          ls -la
+          # git refuses files >100MB, so split big ones into 90MB parts.
+          for f in *; do
+            sz=$(stat -c%s "$f")
+            if [ "$sz" -gt 94000000 ]; then
+              split -b 90m -d "$f" "$f.part."
+              rm "$f"
+              echo "split $f ($sz bytes)"
+            fi
+          done
+          ls -la
           git init -q && git checkout -q -b ci-exe
           git add -A
           git -c user.name=ci -c user.email=ci@localhost commit -q -m "Windows build ${GITHUB_SHA}"
