@@ -16,16 +16,31 @@ public final class IntermediateTransport {
     private final InputStream in;
     private final OutputStream out;
     private final Obfuscated2 obf;
+    /** Padded intermediate (tag 0xdddddddd): 0–15 random bytes after each
+     *  payload, counted in the length. */
+    private final boolean padded;
+    private static final java.security.SecureRandom RND = new java.security.SecureRandom();
 
     public IntermediateTransport(InputStream in, OutputStream out, Obfuscated2 obf) {
+        this(in, out, obf, false);
+    }
+
+    public IntermediateTransport(InputStream in, OutputStream out, Obfuscated2 obf, boolean padded) {
         this.in = in;
         this.out = out;
         this.obf = obf;
+        this.padded = padded;
     }
 
     public void writeMessage(byte[] payload) throws IOException {
-        byte[] frame = new byte[4 + payload.length];
-        int len = payload.length;
+        int pad = padded ? RND.nextInt(16) : 0;
+        byte[] frame = new byte[4 + payload.length + pad];
+        if (pad > 0) {
+            byte[] rnd = new byte[pad];
+            RND.nextBytes(rnd);
+            System.arraycopy(rnd, 0, frame, 4 + payload.length, pad);
+        }
+        int len = payload.length + pad;
         frame[0] = (byte) len;
         frame[1] = (byte) (len >> 8);
         frame[2] = (byte) (len >> 16);

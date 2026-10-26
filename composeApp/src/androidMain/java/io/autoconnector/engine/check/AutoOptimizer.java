@@ -40,6 +40,10 @@ public final class AutoOptimizer {
             HandshakeMode.SPLIT_BEFORE_SNI, HandshakeMode.RANDOM_PADDING,
     };
     private static final int HOSTS = 12;
+    private static final int ROUNDS = 2;
+    /** Scan parallelism levels tried in step 2. */
+    private static final int[] CONC_LEVELS = {8, 16, 32, 48};
+    private static final int CONC_SAMPLE = 40;
 
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
     private static volatile String summary = "";
@@ -108,8 +112,11 @@ public final class AutoOptimizer {
                 progress = step + " / " + CANDIDATES.length + " · " + m.label;
                 Score sc = new Score(m);
                 List<Future<Integer>> fs = new ArrayList<>();
-                for (ProxyEntry p : hosts) {
-                    fs.add(pool.submit(() -> testOnce(p, m)));
+                // Two rounds per method so one lucky/unlucky connect doesn't decide.
+                for (int round = 0; round < ROUNDS; round++) {
+                    for (ProxyEntry p : hosts) {
+                        fs.add(pool.submit(() -> testOnce(p, m)));
+                    }
                 }
                 for (Future<Integer> f : fs) {
                     sc.tried++;
@@ -145,6 +152,13 @@ public final class AutoOptimizer {
             } else {
                 summary = "Best: " + bestTxt + " · kept " + shortLabel(current);
             }
+            // Step 2: scan parallelism. The same sample of live hosts is probed at
+            // several parallelism levels; the highest level that doesn't lose
+            // answers is kept (too many parallel probes on a weak network make
+            // healthy proxies time out).
+            HandshakeMode useMode = apply ? best.mode : current;
+            String concTxt = tuneScanParallelism(prefs, top, useMode, log);
+            if (concTxt != null) summary = summary + " · " + concTxt;
             log.line("🧠 AI optimizer: " + summary);
             return true;
         } catch (Throwable t) {
@@ -165,11 +179,15 @@ public final class AutoOptimizer {
     private static int testOnce(ProxyEntry p, HandshakeMode m) {
         io.autoconnector.engine.relay.UpstreamConnector.Channel ch = null;
         try {
-            ch = io.autoconnector.engine.relay.UpstreamConnector.connect(
-                    p, io.autoconnector.engine.net.Obfuscated2.TAG_INTERMEDIATE, 2, null, 443, 6000, m);
+            // Same transport Telegram uses for this secret: FakeTLS (mtg) servers
+            // accept only padded-intermediate (0xdddddddd) — the plain tag made
+            // every test fail (0/12 for every method).
+            int tag = io.autoconnector.engine.net.Obfuscated2.tagForSecret(p.secret);
+            ch = io.autoconnector.engine.relay.UpstreamConnector.connect(p, tag, 2, null, 443, 6000, m);
             long t0 = System.nanoTime();
             io.autoconnector.engine.net.MtHandshakeProbe.probe(
-                    new io.autoconnector.engine.net.IntermediateTransport(ch.in, ch.out, ch.obf));
+                    new io.autoconnector.engine.net.IntermediateTransport(ch.in, ch.out, ch.obf,
+                            tag == io.autoconnector.engine.net.Obfuscated2.TAG_PADDED));
             int req = (int) ((System.nanoTime() - t0) / 1_000_000L);
             int hs = (ch.totalMs > 0 && ch.connectMs >= 0) ? ch.totalMs - ch.connectMs : 0;
             return Math.max(1, hs + req);
@@ -178,6 +196,54 @@ public final class AutoOptimizer {
         } finally {
             if (ch != null) try { ch.socket.close(); } catch (Throwable ignored) {}
         }
+    }
+
+    /** Returns a short result ("scan ×16"), or null if not enough hosts. */
+    private static String tuneScanParallelism(Prefs prefs, List<ProxyEntry> pool, HandshakeMode mode, Log log) {
+        List<ProxyEntry> sample = new ArrayList<>(pool);
+        Collections.shuffle(sample);
+        if (sample.size() > CONC_SAMPLE) sample = new ArrayList<>(sample.subList(0, CONC_SAMPLE));
+        if (sample.size() < 15) return null;
+        int[] ok = new int[CONC_LEVELS.length];
+        long[] took = new long[CONC_LEVELS.length];
+        for (int i = 0; i < CONC_LEVELS.length; i++) {
+            int c = CONC_LEVELS[i];
+            progress = "scan " + (i + 1) + " / " + CONC_LEVELS.length + " · " + c + " parallel";
+            ExecutorService ex = Executors.newFixedThreadPool(c, r -> {
+                Thread t = new Thread(r, "ai-scan");
+                t.setDaemon(true);
+                return t;
+            });
+            long t0 = System.currentTimeMillis();
+            List<Future<Boolean>> fs = new ArrayList<>();
+            for (ProxyEntry p : sample) {
+                fs.add(ex.submit(() -> {
+                    HealthChecker hc = new HealthChecker(3500, 8000);
+                    hc.setProbeMode(mode);
+                    return hc.check(p).grade == HealthChecker.Grade.FULL;
+                }));
+            }
+            for (Future<Boolean> f : fs) {
+                try { if (Boolean.TRUE.equals(f.get(30, TimeUnit.SECONDS))) ok[i]++; }
+                catch (Exception e) { f.cancel(true); }
+            }
+            took[i] = System.currentTimeMillis() - t0;
+            ex.shutdownNow();
+            log.line("🧠   scan " + c + " parallel: " + ok[i] + "/" + sample.size() + " ok in "
+                    + (took[i] / 1000) + " s");
+        }
+        int maxOk = 0;
+        for (int v : ok) maxOk = Math.max(maxOk, v);
+        if (maxOk == 0) return null;
+        int pick = CONC_LEVELS[0];
+        for (int i = 0; i < CONC_LEVELS.length; i++) {
+            if (ok[i] >= maxOk - 2) pick = CONC_LEVELS[i];
+        }
+        if (pick != prefs.checkConcurrency()) {
+            prefs.setCheckConcurrency(pick);
+            return "scan ×" + pick + " applied";
+        }
+        return "scan ×" + pick;
     }
 
     private static boolean contains(List<ProxyEntry> l, ProxyEntry p) {

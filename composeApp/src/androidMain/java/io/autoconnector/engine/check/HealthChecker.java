@@ -116,8 +116,10 @@ public final class HealthChecker {
             InputStream in = s.getInputStream();
 
             Obfuscated2 obf = new Obfuscated2();
-            obf.perform(out, secret, DcAddresses.DEFAULT_DC);
-            MtHandshakeProbe.probe(new IntermediateTransport(in, out, obf));
+            // Same transport Telegram uses for this secret (padded for "dd").
+            int tag = Obfuscated2.tagForSecret(p.secret);
+            obf.perform(out, secret, tag, DcAddresses.DEFAULT_DC);
+            MtHandshakeProbe.probe(new IntermediateTransport(in, out, obf, tag == Obfuscated2.TAG_PADDED));
 
             return new Result(Grade.FULL, elapsedMs(t0), "resPQ OK — DC reachable");
         } finally {
@@ -148,8 +150,11 @@ public final class HealthChecker {
                     s.getInputStream(), s.getOutputStream(), secret, domain, effective);
 
             Obfuscated2 obf = new Obfuscated2();
-            obf.perform(tls.out, secret, DcAddresses.DEFAULT_DC);
-            MtHandshakeProbe.probe(new IntermediateTransport(tls.in, tls.out, obf));
+            // FakeTLS servers (mtg) only accept the padded-intermediate transport
+            // Telegram uses with "ee" secrets — the plain one made almost every
+            // FakeTLS probe fail (graded "stealth", no speed test).
+            obf.perform(tls.out, secret, Obfuscated2.TAG_PADDED, DcAddresses.DEFAULT_DC);
+            MtHandshakeProbe.probe(new IntermediateTransport(tls.in, tls.out, obf, true));
 
             io.autoconnector.engine.net.HandshakeStats.recordHandshake(effective);
             return new Result(Grade.FULL, elapsedMs(t0), "FakeTLS resPQ OK · DPI=" + effective.label);

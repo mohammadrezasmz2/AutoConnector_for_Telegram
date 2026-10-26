@@ -386,26 +386,28 @@ private fun TitleRow(
         Modifier.fillMaxWidth().padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Lion and Sun flag (the real artwork), small.
-        androidx.compose.foundation.Image(
-            painter = flagLionSun(),
-            contentDescription = null,
-            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-            modifier = Modifier.size(width = 30.dp, height = 17.dp)
-                .clip(RoundedCornerShape(2.dp)),
-        )
-        Spacer(Modifier.width(10.dp))
         // The name column takes ALL the free space (it used to share it with a
         // spacer, which cut "AutoConnector" to "AutoConne…").
         Column(Modifier.weight(1f)) {
-            Text(
-                "AutoConnector",
-                fontWeight = FontWeight.Bold,
-                fontSize = 19.sp,
-                color = AppColors.onSurface,
-                maxLines = 1,
-                softWrap = false,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "AutoConnector",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 19.sp,
+                    color = AppColors.onSurface,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                Spacer(Modifier.width(8.dp))
+                // Lion and Sun flag (the real artwork), small, right after the name.
+                androidx.compose.foundation.Image(
+                    painter = flagLionSun(),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.size(width = 28.dp, height = 16.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                )
+            }
             // Support contact — one tap opens a chat in Telegram.
             Text(
                 "🧑‍💻 @Javidan2030",

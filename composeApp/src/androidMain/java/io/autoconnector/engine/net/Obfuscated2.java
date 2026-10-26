@@ -23,6 +23,16 @@ public final class Obfuscated2 {
 
     /** Transport tag for the "intermediate" transport. */
     public static final int TAG_INTERMEDIATE = 0xeeeeeeee;
+    /** Transport tag for "padded intermediate" — what Telegram itself uses with
+     *  dd / ee (FakeTLS) secrets, and the only one many FakeTLS servers accept. */
+    public static final int TAG_PADDED = 0xdddddddd;
+
+    /** Tag Telegram would use for a proxy with this secret. */
+    public static int tagForSecret(String secret) {
+        if (secret == null || secret.length() < 2) return TAG_INTERMEDIATE;
+        char a = Character.toLowerCase(secret.charAt(0)), b = Character.toLowerCase(secret.charAt(1));
+        return ((a == 'e' && b == 'e') || (a == 'd' && b == 'd')) ? TAG_PADDED : TAG_INTERMEDIATE;
+    }
 
     private static final SecureRandom RND = new SecureRandom();
 
