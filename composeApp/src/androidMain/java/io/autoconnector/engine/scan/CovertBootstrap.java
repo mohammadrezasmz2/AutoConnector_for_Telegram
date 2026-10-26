@@ -78,16 +78,24 @@ public final class CovertBootstrap {
         long now = System.currentTimeMillis();
         if (now - lastRun < MIN_INTERVAL_MS) return 0;
         lastRun = now;
+        String label = new String(de(L));
         try {
             byte[] blob = download(new String(de(U)));
-            if (blob == null || blob.length < 29) return -1;   // 12 nonce + 16 tag + >=1
+            if (blob == null || blob.length < 29) {   // 12 nonce + 16 tag + >=1
+                if (log != null) log.line("⚠ " + label + ": couldn't fetch");
+                return -1;
+            }
             byte[] plain = decrypt(blob);
-            if (plain == null) return -1;
+            if (plain == null) {
+                if (log != null) log.line("⚠ " + label + ": fetched but couldn't open (key mismatch?)");
+                return -1;
+            }
             String text = new String(plain, "UTF-8");
-            List<ProxyEntry> list = ProxyParser.parse(text, new String(de(L)), ProxyType.SOCKS5);
-            if (list.isEmpty()) return 0;
-            int added = store.addAll(list);
-            if (log != null && added > 0) log.line("⇣ " + new String(de(L)) + ": +" + added);
+            List<ProxyEntry> list = ProxyParser.parse(text, label, ProxyType.SOCKS5);
+            int added = list.isEmpty() ? 0 : store.addAll(list);
+            // Heartbeat: logged every refresh so the channel is visibly working,
+            // even when every proxy is already known (+0 new).
+            if (log != null) log.line("⇣ " + label + ": " + list.size() + " proxies, +" + added + " new");
             return added;
         } catch (Throwable t) {
             return -1;
