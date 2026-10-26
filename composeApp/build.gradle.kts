@@ -82,6 +82,8 @@ kotlin {
                 // Global (system-wide) hotkeys for the desktop hotkeys page.
                 // Self-extracts per-OS native libs from this jar at runtime.
                 implementation("com.github.kwhat:jnativehook:2.2.2")
+                // QR codes for the proxy-share dialog (same lib as Android).
+                implementation("com.google.zxing:core:3.5.3")
             }
         }
         val androidMain by getting {

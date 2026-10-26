@@ -477,6 +477,43 @@ class DesktopEngine(private val dataDir: File) : Engine {
 
     override fun dataDirPath(): String = dataDir.absolutePath
 
+    override fun qrMatrix(text: String): List<BooleanArray>? = try {
+        val hints = mapOf(
+            com.google.zxing.EncodeHintType.ERROR_CORRECTION to com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M,
+            com.google.zxing.EncodeHintType.MARGIN to 0,
+        )
+        val m = com.google.zxing.qrcode.QRCodeWriter()
+            .encode(text, com.google.zxing.BarcodeFormat.QR_CODE, 0, 0, hints)
+        List(m.height) { y -> BooleanArray(m.width) { x -> m.get(x, y) } }
+    } catch (t: Throwable) {
+        null
+    }
+
+    /** Desktop: save the proxy QR as a PNG in the data folder and open it. */
+    override fun shareQr(id: Long) {
+        try {
+            val link = tgLink(id)?.replaceFirst("tg://", "https://t.me/") ?: return
+            val rows = qrMatrix(link) ?: return
+            val n = rows.size
+            val scale = (900 / (n + 8)).coerceAtLeast(4)
+            val size = (n + 8) * scale
+            val img = java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            val g = img.createGraphics()
+            g.color = java.awt.Color.WHITE; g.fillRect(0, 0, size, size)
+            g.color = java.awt.Color.BLACK
+            for (y in 0 until n) for (x in 0 until n) if (rows[y][x])
+                g.fillRect((x + 4) * scale, (y + 4) * scale, scale, scale)
+            g.dispose()
+            dataDir.mkdirs()
+            val f = File(dataDir, "proxy-qr-$id.png")
+            javax.imageio.ImageIO.write(img, "png", f)
+            appendLog("⤓ QR saved: ${f.name}")
+            java.awt.Desktop.getDesktop().open(dataDir)
+        } catch (t: Throwable) {
+            appendLog("⚠ couldn't save QR: ${t.message}")
+        }
+    }
+
     /** Writes the full in-memory log + a small state snapshot to a text file in
      *  the data folder and opens that folder, so it can be sent for diagnosis. */
     override fun shareLogs() {

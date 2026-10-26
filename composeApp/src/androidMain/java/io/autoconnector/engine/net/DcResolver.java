@@ -106,6 +106,15 @@ public final class DcResolver {
         String ip = normalize(host);
         int v6 = ipv6Dc(ip);
         if (v6 > 0) return v6;
+        // Telegram's own DC IP ranges have a fixed, published datacenter. Pin them
+        // to their canonical DC and NEVER re-guess: the self-learning cycling was
+        // flipping correct mappings (Telegram opens many short-lived connections,
+        // especially on desktop, and each quick close looked like a "wrong DC"),
+        // which made downloads stall. Only truly non-Telegram IPs are learned.
+        if (isTelegramRange(ip)) {
+            int[] c = candidatesFor(ip, 0);
+            return c.length > 0 ? c[0] : DcAddresses.DEFAULT_DC;
+        }
         Entry e = MAP.get(ip);
         if (e == null) {
             int hint = validDc(headerDc) && !isTelegramRange(ip) ? Math.abs(headerDc) : 0;
@@ -124,6 +133,7 @@ public final class DcResolver {
         if (host == null) return;
         String ip = normalize(host);
         if (ipv6Dc(ip) > 0) return;               // exact — nothing to learn
+        if (isTelegramRange(ip)) return;          // canonical by range — never cycle
         Entry e = MAP.get(ip);
         if (e == null || e.dc() != dcUsed) return; // stale report (already switched)
         synchronized (e) {
