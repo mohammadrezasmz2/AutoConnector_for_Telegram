@@ -1120,6 +1120,13 @@ class AndroidEngine(context: Context) : Engine {
         }
     }
 
+    private fun isBatteryOptimized(): Boolean = try {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
+        pm != null && !pm.isIgnoringBatteryOptimizations(ctx.packageName)
+    } catch (_: Throwable) {
+        false
+    }
+
     override fun runAiOptimize() {
         scope.launch(Dispatchers.IO) {
             io.autoconnector.engine.check.AutoOptimizer.run(ctx) { RelayLog.emit(it) }
@@ -1444,10 +1451,7 @@ class AndroidEngine(context: Context) : Engine {
             aiLastMinsAgo = io.autoconnector.engine.check.AutoOptimizer.lastRunAt().let {
                 if (it > 0) (now - it) / 60_000L else -1L
             },
-            batteryOptimized = try {
-                val pm = ctx.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-                !pm.isIgnoringBatteryOptimizations(ctx.packageName)
-            } catch (_: Throwable) { false },
+            batteryOptimized = isBatteryOptimized(),
             tgBusy = TrafficGovernor.busy(),
             tgAddTotal = tgAddTotal,
             tgAddDone = tgAddDone,
