@@ -285,7 +285,10 @@ fun App(engine: Engine) {
             // top once the header scrolls past it.
             LazyColumn(Modifier.fillMaxSize().keyPageScroll(listState), state = listState) {
                 item {
-                    TitleRow(settings.langCode, onOpenGuide = { showGuide = true }) { code ->
+                    // ✈ = one tap: add the relay (port A) to Telegram as its proxy.
+                    TitleRow(settings.langCode, onOpenGuide = {
+                        engine.openLink("tg://socks?server=127.0.0.1&port=${state.portA.takeIf { it > 0 } ?: 55001}")
+                    }) { code ->
                         engine.updateSettings(settings.copy(langCode = code))
                     }
                 }

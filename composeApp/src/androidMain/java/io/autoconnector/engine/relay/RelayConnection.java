@@ -637,7 +637,7 @@ public final class RelayConnection implements Runnable {
         ProxyEntry scout = manager.nextScout();
         if (scout != null && !(onlyFakeTls && !scout.isFakeTls())) {
             UpstreamConnector.Channel s = trySerial(java.util.Collections.singletonList(scout),
-                    tag, dcId, dst, mode, exp, Math.min(connectTimeoutMs, 2500));
+                    tag, dcId, dst, mode, exp, Math.min(connectTimeoutMs, 1500));
             if (s != null) {
                 ProxyEntry act = manager.activeEntry();
                 RelayLog.emit("🔎 scouting " + scout.host + ":" + scout.port

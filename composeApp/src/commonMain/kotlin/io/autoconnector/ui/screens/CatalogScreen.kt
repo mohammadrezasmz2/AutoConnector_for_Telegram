@@ -243,28 +243,6 @@ fun CatalogContent(
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
             }
-            // How many hosts actually have the number this tab sorts by — the
-            // rest can only be ordered by rating, so the tabs differ only at the top.
-            val measuredN = shown.count {
-                when (sortTab) {
-                    SortTab.DOWN -> it.speedKbps >= 0
-                    SortTab.UP -> it.upKbps >= 0
-                    SortTab.BOTH -> it.speedKbps >= 0 || it.upKbps >= 0
-                }
-            }
-            val testedN = shown.count { it.tgMs > 0 || it.pingMs > 0 }
-            Text(
-                t.catalogMeasuredMs(measuredN, testedN, shown.size),
-                color = if (measuredN > 0) AppColors.accent else AppColors.onSurfaceMuted,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
-            )
-            Text(
-                t.catalogSortHint,
-                color = AppColors.onSurfaceMuted,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
         }
         if (shown.isEmpty()) {
             Text(
@@ -457,7 +435,9 @@ private fun CatalogTile(
             // Real Telegram download speed through this host (the ranking key).
             // KB/s when measured from real Telegram traffic, otherwise the speed
             // test in ms (Telegram's answer through this proxy; lower = faster).
-            IconStat(
+            // Each tab shows only the number it ranks by (Download → ↓,
+            // Upload → ↑, Overall → both), so the tabs read differently.
+            if (tab != SortTab.UP) IconStat(
                 Icons.Filled.Download,
                 when {
                     p.speedKbps >= 0 -> p.speedHuman
@@ -470,7 +450,7 @@ private fun CatalogTile(
             )
             IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.7f))
             // Real Telegram upload speed through this host.
-            IconStat(
+            if (tab != SortTab.DOWN) IconStat(
                 Icons.Filled.Upload,
                 when {
                     p.upKbps >= 0 -> p.upHuman

@@ -31,6 +31,8 @@ public final class StallWatchdog {
     static final long DEAD_MS = 12_000L;
     /** Download went silent (with requests pending) for this long → stalled. */
     static final long STALL_MS = 20_000L;
+    /** Telegram's requests on an idle socket unanswered for this long → reconnect. */
+    static final long UNANSWERED_MS = 25_000L;
 
     /** An active host whose latest real download sample is below this is replaced. */
     static final double SLOW_SWITCH_KBPS = 40.0;
@@ -114,6 +116,22 @@ public final class StallWatchdog {
                     && lastDown > 0 && now - lastDown > STALL_MS
                     && c.upWritesSinceDown.get() >= 2) {
                 cut(c, "download stalled for " + (STALL_MS / 1000) + " s", false);
+                continue;
+            }
+            // Unanswered: Telegram keeps sending (pings / requests) but the
+            // upstream stopped answering long ago. Seen in logs as sessions with
+            // "↓178 B" that sat silent for minutes while Telegram showed
+            // "Connecting… / Updating…". Close the socket so Telegram reconnects
+            // at once (through the active host or a fresh one). Only this socket
+            // is closed — a really broken host is caught by the dead rule on
+            // the reconnect.
+            if (pend > 0 && now - pend > UNANSWERED_MS
+                    && (lastDown <= 0 || now - lastDown > UNANSWERED_MS)
+                    && c.upWritesSinceDown.get() >= 2) {
+                c.killReason = "no answer for " + (UNANSWERED_MS / 1000) + " s";
+                RelayLog.emit("✂ " + c.upstream + " — Telegram's requests unanswered for "
+                        + (UNANSWERED_MS / 1000) + " s → reconnecting this socket");
+                try { Runnable k = c.killer; if (k != null) k.run(); } catch (Throwable ignored) {}
             }
         }
         TrafficGovernor.tick(bps, tgActive);

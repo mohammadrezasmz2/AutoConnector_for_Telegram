@@ -255,25 +255,42 @@ public final class RelayManager {
                 RelayLog.emit(sb.toString());
             }
         }
-        // Scouting queue: stale reserves first, then top-rated hosts never
-        // measured on this network.
+        // Scouting queue: stale reserves first, then hosts never measured on this
+        // network — but ONLY ones whose speed test (a real Telegram handshake
+        // through them) passed in the last 5 minutes, quickest first. A scout
+        // that doesn't answer delays that one socket, so only likely winners
+        // are tried.
         List<ProxyEntry> q = new java.util.ArrayList<>();
         for (ProxyEntry p : res) {
             SpeedBoard.Stat st = SpeedBoard.get(p.id, mode);
-            if (st != null && now - st.lastAt > 15 * 60_000L) q.add(p);
+            if (st != null && now - st.lastAt > 15 * 60_000L && freshTest(p.id, mode, now) > 0) q.add(p);
         }
         try {
             List<ProxyEntry> top = mode != io.autoconnector.engine.core.NetworkMode.UNKNOWN
-                    ? store.topAliveForMode(mode, 40) : store.topAlive(40);
+                    ? store.topAliveForMode(mode, 80) : store.topAlive(80);
+            List<ProxyEntry> cand = new java.util.ArrayList<>();
             for (ProxyEntry p : top) {
                 if (p.id == actId) continue;
                 SpeedBoard.Stat st = SpeedBoard.get(p.id, mode);
                 if (st != null && st.samples > 0) continue;
+                if (freshTest(p.id, mode, now) <= 0) continue;
+                cand.add(p);
+            }
+            cand.sort((a, b) -> Integer.compare(freshTest(a.id, mode, now), freshTest(b.id, mode, now)));
+            for (ProxyEntry p : cand) {
                 q.add(p);
                 if (q.size() >= 12) break;
             }
         } catch (Throwable ignored) {}
         scoutQueue = q;
+    }
+
+    /** Telegram reply time (ms) from a speed test in the last 5 min, else -1. */
+    private static int freshTest(long id, io.autoconnector.engine.core.NetworkMode mode, long now) {
+        io.autoconnector.engine.check.LatencyBoard.Entry e =
+                io.autoconnector.engine.check.LatencyBoard.get(id, mode);
+        if (e == null || e.tgMs <= 0 || now - e.at > 5 * 60_000L) return -1;
+        return e.tgMs;
     }
 
     /**
