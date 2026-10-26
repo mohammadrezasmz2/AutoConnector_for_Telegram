@@ -53,11 +53,14 @@ jobs:
           rm -f club_cfg.txt
           echo "bootstrap config injected"
 
-      # jpackage needs WiX 3.x to produce a Windows .exe/.msi installer; it is no
-      # longer preinstalled on the runner image.
-      - name: Install WiX 3
+      # Compose's Kotlin compile is memory-heavy; the default heap OOMs on the
+      # runner. Give the Gradle JVM room and compile the Kotlin in-process so it
+      # uses that heap. (The Compose plugin downloads WiX itself for the installer.)
+      - name: Raise build memory
         shell: bash
-        run: choco install wixtoolset -y --no-progress || true
+        run: |
+          printf '\norg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g\nkotlin.compiler.execution.strategy=in-process\nkotlin.incremental=false\n' >> gradle.properties
+          cat gradle.properties
 
       - name: Build Windows app
         id: pkg
@@ -65,7 +68,7 @@ jobs:
         run: |
           mkdir -p out
           RUN=1.2.${{ github.run_number }}
-          # Try the real installer first; fall back to a portable zip if WiX/jpackage can't.
+          # Try the real installer first; fall back to a portable zip if jpackage can't.
           if gradle :composeApp:packageExe --no-daemon --stacktrace 2>&1 | tee build.log \
                && EXE=$(ls composeApp/build/compose/binaries/main/exe/*.exe 2>/dev/null | head -1) \
                && [ -n "$EXE" ]; then
