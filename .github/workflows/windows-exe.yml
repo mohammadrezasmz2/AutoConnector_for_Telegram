@@ -53,26 +53,42 @@ jobs:
           rm -f club_cfg.txt
           echo "bootstrap config injected"
 
-      - name: Build Windows installer
+      # jpackage needs WiX 3.x to produce a Windows .exe/.msi installer; it is no
+      # longer preinstalled on the runner image.
+      - name: Install WiX 3
+        shell: bash
+        run: choco install wixtoolset -y --no-progress || true
+
+      - name: Build Windows app
+        id: pkg
         shell: bash
         run: |
-          gradle :composeApp:packageExe --no-daemon --stacktrace 2>&1 | tee build.log
           mkdir -p out
-          EXE=$(ls composeApp/build/compose/binaries/main/exe/*.exe | head -1)
-          cp "$EXE" "out/AutoConnector-Setup-1.2.${{ github.run_number }}.exe"
+          RUN=1.2.${{ github.run_number }}
+          # Try the real installer first; fall back to a portable zip if WiX/jpackage can't.
+          if gradle :composeApp:packageExe --no-daemon --stacktrace 2>&1 | tee build.log \
+               && EXE=$(ls composeApp/build/compose/binaries/main/exe/*.exe 2>/dev/null | head -1) \
+               && [ -n "$EXE" ]; then
+            cp "$EXE" "out/AutoConnector-Setup-$RUN.exe"
+          else
+            echo "::warning::installer step failed — building a portable app-image instead"
+            gradle :composeApp:createDistributable --no-daemon --stacktrace 2>&1 | tee -a build.log
+            APPDIR="composeApp/build/compose/binaries/main/app/AutoConnector"
+            powershell -Command "Compress-Archive -Path '$APPDIR/*' -DestinationPath 'out/AutoConnector-Portable-$RUN.zip' -Force"
+          fi
           ls -la out
 
       - uses: actions/upload-artifact@v4
         with:
           name: AutoConnector-windows
-          path: out/*.exe
+          path: out/*
           if-no-files-found: error
 
-      - name: Publish EXE to the ci-exe branch
+      - name: Publish to the ci-exe branch
         shell: bash
         run: |
-          mkdir -p /tmp/exe && cp out/*.exe /tmp/exe/ && cd /tmp/exe
+          mkdir -p "$RUNNER_TEMP/pub" && cp out/* "$RUNNER_TEMP/pub/" && cd "$RUNNER_TEMP/pub"
           git init -q && git checkout -q -b ci-exe
-          git add *.exe
-          git -c user.name=ci -c user.email=ci@localhost commit -q -m "EXE ${GITHUB_SHA}"
+          git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "Windows build ${GITHUB_SHA}"
           git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-exe
