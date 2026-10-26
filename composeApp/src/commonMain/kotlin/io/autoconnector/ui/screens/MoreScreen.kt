@@ -182,12 +182,10 @@ fun MoreScreen(onOpen: (MoreDest) -> Unit, onOpenGuide: () -> Unit, hotkeysSuppo
         MenuEntry(t.settings, t.settingsSub) { onOpen(MoreDest.SETTINGS) }
         MenuEntry(t.subscriptions, t.subscriptionsSub) { onOpen(MoreDest.SOURCES) }
         MenuEntry(t.statistics, t.statisticsSub) { onOpen(MoreDest.STATS) }
-        MenuEntry(t.export, t.exportSub) { onOpen(MoreDest.EXPORT) }
-        // Hotkeys page: desktop shows keyboard chords; Android shows the
-        // volume-button pattern trigger (same destination, branched inside).
-        if (hotkeysSupported || volPatternSupported) {
-            if (hotkeysSupported) MenuEntry(t.hotkeys, t.hotkeysSub) { onOpen(MoreDest.HOTKEYS) }
-            else MenuEntry(t.volTriggerTitle, t.volTriggerSub) { onOpen(MoreDest.HOTKEYS) }
+        // Export page and the volume-button trigger were removed from the app;
+        // desktop keeps its keyboard hotkeys page.
+        if (hotkeysSupported) {
+            MenuEntry(t.hotkeys, t.hotkeysSub) { onOpen(MoreDest.HOTKEYS) }
         }
         MenuEntry(t.about, t.aboutSub) { onOpen(MoreDest.ABOUT) }
     }
@@ -1577,7 +1575,8 @@ private fun fmt2(v: Double): String {
 @Composable
 private fun AboutPage(cb: MoreCallbacks) {
     val t = LocalStrings.current
-    val github = "https://github.com/cheburnetik/AutoConnector_for_Telegram"
+    val github = "https://github.com/mohammadrezasmz2/AutoConnector_for_Telegram"
+    val upstream = "https://github.com/cheburnetik/AutoConnector_for_Telegram"
     val tg = "https://t.me/AutoConnector_for_Telegram"
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -1595,11 +1594,22 @@ private fun AboutPage(cb: MoreCallbacks) {
                 .clip(RoundedCornerShape(24.dp)),
         )
         Text(
-            "AutoConnector for Telegram",
+            "AutoConnector",
             fontWeight = FontWeight.Bold,
             fontSize = 19.sp,
             color = AppColors.accent,
             modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+        // The project's GitHub, right under the name (tap to open).
+        Text(
+            "github.com/mohammadrezasmz2/AutoConnector_for_Telegram",
+            color = AppColors.accent,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            fontFamily = monospaceFontFamily(),
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+                .clickable { cb.onOpenUrl(github) }
+                .padding(4.dp),
         )
         Text(t.appTagline, fontSize = 15.sp)
 
@@ -1622,6 +1632,10 @@ private fun AboutPage(cb: MoreCallbacks) {
             }
             OutlinedButton(onClick = { cb.onCopy(github) }) { Text(t.copy) }
         }
+
+        SubTitle(t.aboutBasedOn)
+        Text(upstream, color = AppColors.onSurfaceMuted, fontSize = 13.sp, fontFamily = monospaceFontFamily(),
+            modifier = Modifier.clickable { cb.onOpenUrl(upstream) })
 
         SubTitle(t.feedbackBugs)
         Text(tg, color = AppColors.accent, fontSize = 14.sp, fontFamily = monospaceFontFamily())

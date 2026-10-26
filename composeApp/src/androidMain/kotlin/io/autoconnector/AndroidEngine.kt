@@ -757,6 +757,8 @@ class AndroidEngine(context: Context) : Engine {
         return items.sortedWith(
             compareBy<CatalogItem> { tier(it) }
                 .thenByDescending { it.speedKbps }
+                // Not measured in KB/s yet → the 5-minute speed test (ms) decides.
+                .thenBy { if (it.tgMs > 0) it.tgMs else Int.MAX_VALUE }
                 .thenByDescending { it.rating }
                 .thenBy { if (it.rttMs >= 0) it.rttMs else Int.MAX_VALUE }
         )
@@ -770,6 +772,7 @@ class AndroidEngine(context: Context) : Engine {
         val tls = if (p.isFakeTls) FakeTlsClient.domainFromSecret(p.secret) else null
         val alive = r.modeLastCheck > 0 && r.modeAlive
         val st = SpeedBoard.get(p.id, speedMode)
+        val lat = io.autoconnector.engine.check.LatencyBoard.get(p.id, speedMode)
         val eff = st?.effective(now) ?: -1.0
         val effUp = st?.effectiveUp(now) ?: -1.0
         return CatalogItem(
@@ -809,6 +812,8 @@ class AndroidEngine(context: Context) : Engine {
                 val last = maxOf(s.lastAt, s.upLastAt)
                 if (last > 0) (now - last) / 1000 else -1L
             } ?: -1L,
+            tgMs = lat?.tgMs ?: -1,
+            pingMs = lat?.pingMs?.takeIf { it > 0 } ?: r.modeRtt,
         )
     }
 
@@ -903,7 +908,8 @@ class AndroidEngine(context: Context) : Engine {
     }
 
     // Android volume-button pattern trigger (replaces hotkeys page on Android).
-    override fun volPatternSupported() = true
+    // Volume-button trigger removed from the app (no accessibility service).
+    override fun volPatternSupported() = false
     override fun volPatternEnabled() = Prefs(ctx).volPatternEnabled()
     override fun setVolPatternEnabled(on: Boolean) { Prefs(ctx).setVolPatternEnabled(on) }
     override fun volPatternGapMs() = Prefs(ctx).volPatternGapMs()

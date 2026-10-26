@@ -486,10 +486,17 @@ object Fa : Strings {
     override fun catalogCopyTop(n: Int) = "کپی $n تای برتر"
     override fun catalogMeasured(n: Int, total: Int, what: String) =
         "$n از $total پروکسی سرعت $what اندازه‌گیری‌شده دارند — این‌ها اول می‌آیند؛ بقیه تا وقتی ترافیک تلگرام از آن‌ها رد نشده، بر اساس امتیاز مرتب می‌شوند."
+    override fun catalogMeasuredMs(kbps: Int, ms: Int, total: Int) =
+        "$kbps از $total با KB/s اندازه‌گیری شده‌اند (ترافیک واقعی تلگرام از طریق رله) · $ms با تست سرعت به میلی‌ثانیه (هر ۵ دقیقه، کمتر = سریع‌تر). " +
+            "پروکسی‌هایی که با ✈ مستقیم به تلگرام اضافه می‌شوند از این برنامه رد نمی‌شوند، پس KB/s آن‌ها اینجا دیده نمی‌شود."
+    override val tgResponseField = "تست سرعت (پاسخ تلگرام)"
     override val measuredDown = "دانلود"
     override val measuredUp = "آپلود"
     override val measuredBoth = "دانلود/آپلود"
     override fun liveProxiesLine(n: Int) = "پروکسی‌های زنده: $n"
+    override val tabConnectorScan = "اتصال"
+    override val scanSectionTitle = "🔍 اسکن پروکسی (پیدا و تست کردن پروکسی برای اتصال)"
+    override val aboutBasedOn = "بر پایهٔ پروژهٔ اصلی"
     override fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int) =
         "در حال بررسی $done از $total · $ok جواب داد · $threads همزمان · $perMin در دقیقه"
     override fun scanPulseIdle(nextSec: Int, backlog: Int) =

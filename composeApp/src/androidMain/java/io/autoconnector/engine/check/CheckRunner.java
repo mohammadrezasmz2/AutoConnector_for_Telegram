@@ -276,6 +276,11 @@ public final class CheckRunner {
                 }
             } catch (Exception ignored) {}
             io.autoconnector.engine.core.ScanProgress.onProbe(r.ok());
+            // Speed test in ms: a FULL probe = Telegram answered through the proxy.
+            if (r.grade == HealthChecker.Grade.FULL && r.connectMs > 0 && r.rttMs > 0) {
+                LatencyBoard.record(p.id, io.autoconnector.engine.core.NetworkMonitor.currentMode(),
+                        r.connectMs, Math.max(1, r.rttMs - r.connectMs));
+            }
             switch (r.grade) {
                 case FULL: full.incrementAndGet(); break;
                 case STEALTH: stealth.incrementAndGet(); break;

@@ -410,10 +410,18 @@ interface Strings {
     /** "N of M hosts have a measured <download/upload> speed" under the tabs. */
     fun catalogMeasured(n: Int, total: Int, what: String): String =
         "$n of $total hosts have a measured $what speed — they are ranked first; the rest by rating until Telegram traffic passes through them."
+    fun catalogMeasuredMs(kbps: Int, ms: Int, total: Int): String =
+        "$kbps of $total measured in KB/s (real Telegram traffic through the relay) · $ms speed-tested in ms (every 5 min, lower = faster). " +
+            "Proxies added straight to Telegram with ✈ bypass this app, so their KB/s can't be seen here."
+    val tgResponseField: String get() = "Speed test (Telegram reply)"
     val measuredDown: String get() = "download"
     val measuredUp: String get() = "upload"
     val measuredBoth: String get() = "download/upload"
     fun liveProxiesLine(n: Int): String = "Live proxies: $n"
+    val tabConnectorScan: String get() = "Connect"
+    val scanSectionTitle: String get() = "🔍 Proxy scan (finds and tests proxies for the connector)"
+    val aboutMyGithub: String get() = "GitHub"
+    val aboutBasedOn: String get() = "Based on the original project"
     fun scanPulseRunning(done: Int, total: Int, ok: Int, threads: Int, perMin: Int): String =
         "Checking $done / $total · $ok answered · $threads at once · $perMin/min"
     fun scanPulseIdle(nextSec: Int, backlog: Int): String =

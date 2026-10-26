@@ -98,6 +98,10 @@ data class CatalogItem(
     val liveSpeed: Boolean = false,
     // 1..5 = this host is in the relay's reserve list (fastest measured backups).
     val reserveRank: Int = 0,
+    // Speed test (every probe + every 5 min), in ms — known for every live host:
+    // tgMs = Telegram's answer through the proxy, pingMs = TCP connect time.
+    val tgMs: Int = -1,
+    val pingMs: Int = -1,
 )
 
 data class SourceItem(

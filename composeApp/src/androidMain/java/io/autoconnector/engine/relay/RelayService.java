@@ -76,6 +76,67 @@ public final class RelayService extends Service {
     private final java.util.concurrent.atomic.AtomicBoolean mainsBusy =
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile long mainsStartedAt = 0;
+
+    // --- 5-minute speed test ---------------------------------------------------
+    // Re-tests the top hosts (+ active + reserves) every 5 minutes so their ping /
+    // Telegram response time (ms) stays fresh and comparable, even for hosts that
+    // never carried Telegram traffic through the relay.
+    private static final long SPEED_TEST_INTERVAL_MS = 5 * 60_000L;
+    private static final int SPEED_TEST_HOSTS = 40;
+    private final java.util.concurrent.atomic.AtomicBoolean speedTestBusy =
+            new java.util.concurrent.atomic.AtomicBoolean();
+    private final Runnable speedTestTask = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (new Prefs(RelayService.this).scanEnabled()) runSpeedTest();
+            } catch (Throwable ignored) {}
+            if (running) svc.postDelayed(this, SPEED_TEST_INTERVAL_MS);
+        }
+    };
+
+    private void runSpeedTest() {
+        if (!speedTestBusy.compareAndSet(false, true)) return;
+        try {
+            io.autoconnector.engine.core.AppExecutors.SERVICE.submit(() -> {
+                try {
+                    ProxyStore store = ProxyStore.get(this);
+                    io.autoconnector.engine.core.NetworkMode net =
+                            io.autoconnector.engine.core.NetworkMonitor.currentMode();
+                    List<ProxyEntry> list = new java.util.ArrayList<>();
+                    RelayManager m = RelayManager.INSTANCE;
+                    if (m != null) {
+                        if (m.activeEntry() != null) list.add(m.activeEntry());
+                        for (ProxyEntry p : m.reserveEntries()) if (!containsId(list, p.id)) list.add(p);
+                    }
+                    List<ProxyEntry> top = net != io.autoconnector.engine.core.NetworkMode.UNKNOWN
+                            ? store.topAliveForMode(net, SPEED_TEST_HOSTS) : store.topAlive(SPEED_TEST_HOSTS);
+                    for (ProxyEntry p : top) {
+                        if (!containsId(list, p.id)) list.add(p);
+                        if (list.size() >= SPEED_TEST_HOSTS) break;
+                    }
+                    if (list.isEmpty()) return;
+                    RelayLog.emit("@scan", "⏱ speed test (every 5 min): " + list.size() + " top hosts");
+                    new CheckRunner(store, line -> RelayLog.emit("@scan", line), 6).runOn(list, "speed test");
+                    ProxyEntry best = null;
+                    int bestMs = Integer.MAX_VALUE;
+                    for (ProxyEntry p : list) {
+                        io.autoconnector.engine.check.LatencyBoard.Entry e =
+                                io.autoconnector.engine.check.LatencyBoard.get(p.id, net);
+                        if (e != null && e.tgMs > 0 && e.tgMs < bestMs) { bestMs = e.tgMs; best = p; }
+                    }
+                    if (best != null) {
+                        RelayLog.emit("@scan", "⏱ speed test done · fastest Telegram response: "
+                                + best.host + ":" + best.port + " " + bestMs + " ms");
+                    }
+                } finally {
+                    speedTestBusy.set(false);
+                }
+            });
+        } catch (Throwable t) {
+            speedTestBusy.set(false);
+        }
+    }
     /** Cap for the pause between passes while scanning is on (continuous scan). */
     private static final long MAX_IDLE_BETWEEN_PASSES_MS = 60_000L;
 
@@ -524,7 +585,12 @@ public final class RelayService extends Service {
         svc.removeCallbacks(mainsCheckTask);
         svc.removeCallbacks(sparkTick);
         svc.removeCallbacks(subsRefillTask);
-        if (scanOn) { svc.post(mainsCheckTask); svc.post(subsRefillTask); }
+        svc.removeCallbacks(speedTestTask);
+        if (scanOn) {
+            svc.post(mainsCheckTask);
+            svc.post(subsRefillTask);
+            svc.postDelayed(speedTestTask, 60_000L);
+        }
         // Spark ingest also runs in proxy-only mode so the traffic graph keeps
         // filling even when background scanning is off.
         if (scanOn || proxyOn) svc.post(sparkTick);

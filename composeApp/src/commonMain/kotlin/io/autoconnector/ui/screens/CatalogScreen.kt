@@ -252,11 +252,9 @@ fun CatalogContent(
                     SortTab.BOTH -> it.speedKbps >= 0 || it.upKbps >= 0
                 }
             }
+            val testedN = shown.count { it.tgMs > 0 || it.pingMs > 0 }
             Text(
-                t.catalogMeasured(
-                    measuredN, shown.size,
-                    when (sortTab) { SortTab.DOWN -> t.measuredDown; SortTab.UP -> t.measuredUp; SortTab.BOTH -> t.measuredBoth },
-                ),
+                t.catalogMeasuredMs(measuredN, testedN, shown.size),
                 color = if (measuredN > 0) AppColors.accent else AppColors.onSurfaceMuted,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
@@ -347,11 +345,30 @@ private fun sortForTab(items: List<CatalogItem>, tab: SortTab): List<CatalogItem
         metric(c) >= 0 -> 1
         else -> 2
     }
+    // Hosts without KB/s yet are ordered by their speed test (ms, lower first).
+    fun latency(c: CatalogItem): Int {
+        val tg = if (c.tgMs > 0) c.tgMs else Int.MAX_VALUE / 4
+        val ping = if (c.pingMs > 0) c.pingMs else Int.MAX_VALUE / 4
+        return when (tab) {
+            SortTab.DOWN -> tg
+            SortTab.UP -> ping
+            SortTab.BOTH -> tg + ping
+        }
+    }
     return items.sortedWith(
         compareBy<CatalogItem> { tier(it) }
             .thenByDescending { metric(it) }
+            .thenBy { latency(it) }
             .thenByDescending { it.rating }
     )
+}
+
+/** Colour for a speed-test time (ms): green = quick, amber = usable, red = slow. */
+private fun msColor(ms: Int): Color = when {
+    ms <= 0 -> AppColors.onSurfaceMuted
+    ms <= 500 -> AppColors.green
+    ms <= 1200 -> AppColors.amber
+    else -> AppColors.red
 }
 
 /** Colour for a measured download speed: green = fast, amber = usable, red = slow. */
@@ -376,7 +393,7 @@ private fun CatalogTile(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(AppColors.card)
-            .border(1.dp, if (p.live) AppColors.green else AppColors.cardBorder, RoundedCornerShape(12.dp))
+            .border(1.dp, AppColors.cardBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
@@ -438,20 +455,30 @@ private fun CatalogTile(
                 StatusDot(relayColor, 9)
             }
             // Real Telegram download speed through this host (the ranking key).
+            // KB/s when measured from real Telegram traffic, otherwise the speed
+            // test in ms (Telegram's answer through this proxy; lower = faster).
             IconStat(
                 Icons.Filled.Download,
-                if (p.speedKbps >= 0) p.speedHuman else t.dash,
+                when {
+                    p.speedKbps >= 0 -> p.speedHuman
+                    p.tgMs > 0 -> "${p.tgMs}${t.unitMs}"
+                    else -> t.dash
+                },
                 Modifier.weight(1.3f),
-                valueColor = speedColor(p.speedKbps),
+                valueColor = if (p.speedKbps >= 0) speedColor(p.speedKbps) else msColor(p.tgMs),
                 highlighted = tab != SortTab.UP,
             )
             IconStat(ICON_TG, fmtMins(p.tgConnectMinsAgo, t), Modifier.weight(0.7f))
             // Real Telegram upload speed through this host.
             IconStat(
                 Icons.Filled.Upload,
-                if (p.upKbps >= 0) p.upHuman else t.dash,
+                when {
+                    p.upKbps >= 0 -> p.upHuman
+                    p.pingMs > 0 -> "${p.pingMs}${t.unitMs}"
+                    else -> t.dash
+                },
                 Modifier.weight(1.3f),
-                valueColor = speedColor(p.upKbps),
+                valueColor = if (p.upKbps >= 0) speedColor(p.upKbps) else msColor(p.pingMs / 2 * 3),
                 highlighted = tab != SortTab.DOWN,
             )
             IconStat(ICON_TRAFFIC, p.bytesRelayedHuman, Modifier.weight(1.0f))
@@ -579,6 +606,11 @@ fun CatalogDetailPage(
                             Icons.Filled.Upload, t.upField,
                             if (p.upKbps >= 0) p.upHuman else t.speedNotMeasured,
                             speedColor(p.upKbps),
+                        )
+                        DetailRow(
+                            Icons.Filled.Speed, t.tgResponseField,
+                            if (p.tgMs > 0) "${p.tgMs} ${t.unitMs}" else t.dash,
+                            msColor(p.tgMs),
                         )
                         if (p.speedSamples > 0 || p.stalls > 0) {
                             DetailRow(Icons.Filled.NetworkCheck, " ", t.speedSamples(p.speedSamples, p.stalls), AppColors.onSurfaceMuted)

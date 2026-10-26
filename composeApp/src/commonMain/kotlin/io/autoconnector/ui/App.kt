@@ -81,8 +81,9 @@ import io.autoconnector.ui.theme.AppColors
 import io.autoconnector.ui.theme.AppTheme
 
 private enum class Tabs(val label: String, val icon: ImageVector) {
+    // Connector + Scan in one tab: connection status on top, the live scan
+    // that feeds it right below (they are one system to the user).
     CONNECTOR("Connector", Icons.Filled.Bolt),
-    SCAN("Scan", Icons.Filled.Search),
     CATALOG("Catalog", Icons.AutoMirrored.Filled.List),
     LOGS("Logs", Icons.Filled.Terminal),
     MORE("More", Icons.Filled.Menu),
@@ -303,10 +304,21 @@ fun App(engine: Engine) {
                 }
 
                 when (tab) {
-                    Tabs.CONNECTOR -> item {
-                        ConnectorContent(state, onOpenGuide = { showGuide = true }, onOpenQuick = { quickSettings = true })
+                    Tabs.CONNECTOR -> {
+                        item {
+                            ConnectorContent(state, onOpenGuide = { showGuide = true }, onOpenQuick = { quickSettings = true })
+                        }
+                        item {
+                            Text(
+                                LocalStrings.current.scanSectionTitle,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = AppColors.accent,
+                                modifier = Modifier.padding(start = 14.dp, end = 14.dp, top = 10.dp),
+                            )
+                        }
+                        item { ScanContent(state, onScanNow = engine::scanNow, onSetScanMode = engine::setScanMode) }
                     }
-                    Tabs.SCAN -> item { ScanContent(state, onScanNow = engine::scanNow, onSetScanMode = engine::setScanMode) }
                     Tabs.CATALOG -> item {
                         CatalogContent(
                             items = catalog,
@@ -627,8 +639,7 @@ private fun TabCell(t: Tabs, active: Boolean, modifier: Modifier, onClick: () ->
         )
         val tr = LocalStrings.current
         val label = when (t) {
-            Tabs.CONNECTOR -> tr.tabConnector
-            Tabs.SCAN -> tr.tabScan
+            Tabs.CONNECTOR -> tr.tabConnectorScan
             Tabs.CATALOG -> tr.tabCatalog
             Tabs.LOGS -> tr.tabLogs
             Tabs.MORE -> tr.tabMore
