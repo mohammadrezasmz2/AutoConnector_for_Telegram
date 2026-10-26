@@ -239,6 +239,15 @@ compose.desktop {
             val iconsDir = project.file("src/desktopMain/resources/icons")
             windows {
                 iconFile.set(iconsDir.resolve("app.ico"))
+                // Create a desktop icon and a Start-menu entry, let the user pick
+                // the folder, and set a stable UUID so new versions install as an
+                // upgrade over the old one.
+                shortcut = true
+                menu = true
+                menuGroup = "AutoConnector"
+                dirChooser = true
+                perUserInstall = true
+                upgradeUuid = "EB7F3E6E-5D45-4577-A9A1-C9882C9111F5"
             }
             macOS {
                 iconFile.set(iconsDir.resolve("app.icns"))
