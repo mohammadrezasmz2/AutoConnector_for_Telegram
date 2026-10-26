@@ -83,17 +83,37 @@ public final class AutoOptimizer {
             Prefs prefs = new Prefs(ctx);
             ProxyStore store = ProxyStore.get(ctx);
             NetworkMode mode = NetworkMonitor.currentMode();
-            // Test hosts: the ones carrying Telegram right now (active + reserves)
-            // first, then the best-rated FakeTLS hosts — the methods only differ
-            // for FakeTLS ("ee") proxies.
+            // Test hosts: FakeTLS ("ee") proxies PROVEN to work — the methods only
+            // differ for FakeTLS. "Alive" in the scan also counts half-open
+            // ("≈") hosts that never complete a handshake; testing on those made
+            // every method score the same (2/24). Order: active + reserves, then
+            // hosts that carried Telegram traffic (KB/s known), then hosts whose
+            // full speed test passed in the last 30 min, then the rest.
             List<ProxyEntry> hosts = new ArrayList<>();
             io.autoconnector.engine.relay.RelayManager rm = io.autoconnector.engine.relay.RelayManager.INSTANCE;
             if (rm != null) {
                 if (rm.activeEntry() != null && rm.activeEntry().isFakeTls()) hosts.add(rm.activeEntry());
                 for (ProxyEntry p : rm.reserveEntries()) if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
             }
+            long now0 = System.currentTimeMillis();
+            List<Long> measuredIds = new ArrayList<>();
+            for (io.autoconnector.engine.relay.SpeedBoard.Stat st : io.autoconnector.engine.relay.SpeedBoard.snapshot()) {
+                if (st.mode.equals(mode.code) && st.samples > 0) measuredIds.add(st.proxyId);
+            }
+            if (!measuredIds.isEmpty()) {
+                for (ProxyEntry p : store.proxiesByIds(measuredIds)) {
+                    if (hosts.size() >= HOSTS) break;
+                    if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
+                }
+            }
             List<ProxyEntry> top = mode != NetworkMode.UNKNOWN
-                    ? store.topAliveForMode(mode, 80) : store.topAlive(80);
+                    ? store.topAliveForMode(mode, 200) : store.topAlive(200);
+            for (ProxyEntry p : top) {
+                if (hosts.size() >= HOSTS) break;
+                LatencyBoard.Entry e = LatencyBoard.get(p.id, mode);
+                boolean proven = e != null && e.tgMs > 0 && now0 - e.at < 30 * 60_000L;
+                if (proven && p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
+            }
             for (ProxyEntry p : top) {
                 if (hosts.size() >= HOSTS) break;
                 if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
@@ -146,6 +166,7 @@ public final class AutoOptimizer {
                       + (best.ms.isEmpty() ? "" : " · " + best.median() + " ms");
             if (apply) {
                 prefs.setHandshakeMode(best.mode.ordinal());
+                if (prefs.dpiApplyProbes()) HealthChecker.setDefaultProbeMode(best.mode);
                 summary = "✓ " + bestTxt + " — applied";
             } else if (best != null && best.mode == current && best.ok > 0) {
                 summary = "✓ " + bestTxt + " — already in use";

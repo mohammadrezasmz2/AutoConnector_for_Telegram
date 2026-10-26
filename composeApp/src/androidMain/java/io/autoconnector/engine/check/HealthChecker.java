@@ -75,8 +75,17 @@ public final class HealthChecker {
 
     /** Anti-DPI handshake policy used for FakeTLS probes — kept in sync with
      *  the relay so background checks mirror what a real Telegram connect does. */
-    private volatile io.autoconnector.engine.net.HandshakeMode probeMode =
-            io.autoconnector.engine.net.HandshakeMode.NORMAL;
+    private volatile io.autoconnector.engine.net.HandshakeMode probeMode = defaultProbeMode;
+
+    /** App-wide probe method (the relay's anti-DPI method when "apply to probes"
+     *  is on). The continuous scan used to create its checker with the plain
+     *  ClientHello, which DPI blocks: ~98 % of FakeTLS probes failed ("≈"). */
+    private static volatile io.autoconnector.engine.net.HandshakeMode defaultProbeMode =
+            io.autoconnector.engine.net.HandshakeMode.AUTO_RANDOM;
+
+    public static void setDefaultProbeMode(io.autoconnector.engine.net.HandshakeMode m) {
+        if (m != null) defaultProbeMode = m;
+    }
 
     /** Back-compat: one timeout used for both connect and read. */
     public HealthChecker(int timeoutMs) {

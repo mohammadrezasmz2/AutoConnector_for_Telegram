@@ -123,6 +123,9 @@ public final class RelayManager {
         try {
             io.autoconnector.engine.core.Prefs p = new io.autoconnector.engine.core.Prefs(ctx);
             AutoTuner.setEnabled(p.autoTune());
+            io.autoconnector.engine.check.HealthChecker.setDefaultProbeMode(p.dpiApplyProbes()
+                    ? io.autoconnector.engine.net.HandshakeMode.fromOrdinal(p.handshakeMode())
+                    : io.autoconnector.engine.net.HandshakeMode.NORMAL);
             StallWatchdog.setGuardEnabled(p.stallGuard());
             io.autoconnector.engine.core.TrafficGovernor.setEnabled(p.tgFirstScan());
         } catch (Throwable ignored) {}
