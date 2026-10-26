@@ -242,11 +242,13 @@ compose.desktop {
                 // Create a desktop icon and a Start-menu entry, let the user pick
                 // the folder, and set a stable UUID so new versions install as an
                 // upgrade over the old one.
+                // All-users install (like the version that installed fine), plus a
+                // desktop icon + Start-menu entry. Registers in "Apps & features"
+                // so it can be uninstalled normally. Stable UUID = clean upgrades.
                 shortcut = true
                 menu = true
                 menuGroup = "AutoConnector"
                 dirChooser = true
-                perUserInstall = true
                 upgradeUuid = "EB7F3E6E-5D45-4577-A9A1-C9882C9111F5"
             }
             macOS {
