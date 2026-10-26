@@ -39,7 +39,11 @@ public final class RelayConnection implements Runnable {
      * upstream went silent) — we tear it down so the LiveConn registry stays
      * honest and the user doesn't see a stale "active session".
      */
-    private static final int PIPE_IDLE_TIMEOUT_MS = 180_000;
+    // Idle sockets used to be closed after 3 min — a log showed Telegram's idle
+    // connections being cut in groups of three every 3 minutes, each one making
+    // Telegram reconnect ("Connecting…"). Dead / unanswered sockets are caught by
+    // the watchdog within 12–25 s, so idle ones can stay open much longer.
+    private static final int PIPE_IDLE_TIMEOUT_MS = 600_000;
     private static final int FAILOVER_CANDIDATES = 12;
     private static final int PIPE_BUF = 16384;
 

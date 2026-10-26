@@ -330,11 +330,11 @@ public final class RelayManager {
             SpeedBoard.Stat s = SpeedBoard.get(r.id, mode);
             if (s == null || s.samples <= 0) continue;
             // Proven: a sustained sample this session, or several samples lately.
-            boolean proven = (s.lastSampleAt > 0 && now - s.lastSampleAt < 30 * 60_000L)
-                    || (s.samples >= 3 && now - s.lastAt < 30 * 60_000L);
+            boolean proven = (s.lastSampleAt > 0 && now - s.lastSampleAt < 45 * 60_000L)
+                    || (s.samples >= 2 && now - s.lastAt < 45 * 60_000L);
             if (!proven) continue;
             double er = s.effective(now);
-            if (er < Math.max(ea * 1.4, ea + 40)) continue;
+            if (er < Math.max(ea * 1.25, ea + 30)) continue;
             lastUpgradeAt = now;
             setActive(r, "faster: " + AutoTuner.fmtKbps(er) + " vs " + AutoTuner.fmtKbps(ea)
                     + " — previous host kept in reserve");

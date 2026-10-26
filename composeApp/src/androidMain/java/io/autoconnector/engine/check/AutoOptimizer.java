@@ -123,8 +123,11 @@ public final class AutoOptimizer {
                 log.line(summary);
                 return true;
             }
+            LAST_ERR.clear();
+            StringBuilder hl = new StringBuilder();
+            for (ProxyEntry p : hosts) { if (hl.length() > 0) hl.append(", "); hl.append(p.host); }
             log.line("🧠 AI optimizer: testing " + CANDIDATES.length + " connection methods on "
-                    + hosts.size() + " top proxies…");
+                    + hosts.size() + " proxies: " + hl);
             List<Score> scores = new ArrayList<>();
             int step = 0;
             for (HandshakeMode m : CANDIDATES) {
@@ -151,8 +154,23 @@ public final class AutoOptimizer {
                 log.line("🧠   " + m.label + ": " + sc.ok + "/" + sc.tried + " ok"
                         + (sc.ms.isEmpty() ? "" : " · " + sc.median() + " ms"));
             }
+            // Which hosts never answered, and why (helps tell a bad host from a bad method).
+            if (!LAST_ERR.isEmpty()) {
+                StringBuilder eb = new StringBuilder();
+                int n = 0;
+                for (ProxyEntry p : hosts) {
+                    String e = LAST_ERR.get(p.id);
+                    if (e == null) continue;
+                    if (n++ > 0) eb.append(" · ");
+                    eb.append(p.host).append(": ").append(e);
+                    if (n >= 6) break;
+                }
+                log.line("🧠   failures: " + eb);
+            }
             Score best = null;
             for (Score s : scores) if (best == null || s.value() > best.value()) best = s;
+            int minOk = Integer.MAX_VALUE, maxOk = 0;
+            for (Score s : scores) { minOk = Math.min(minOk, s.ok); maxOk = Math.max(maxOk, s.ok); }
             HandshakeMode current = HandshakeMode.fromOrdinal(prefs.handshakeMode());
             Score cur = null;
             for (Score s : scores) if (s.mode == current) cur = s;
@@ -170,6 +188,9 @@ public final class AutoOptimizer {
                 summary = "✓ " + bestTxt + " — applied";
             } else if (best != null && best.mode == current && best.ok > 0) {
                 summary = "✓ " + bestTxt + " — already in use";
+            } else if (maxOk - minOk <= 1) {
+                summary = "All methods equal (" + maxOk + "/" + (best != null ? best.tried : 0)
+                        + ") · kept " + shortLabel(current);
             } else {
                 summary = "Best: " + bestTxt + " · kept " + shortLabel(current);
             }
@@ -197,6 +218,9 @@ public final class AutoOptimizer {
     /** One real connect through {@code p} with method {@code m} (exactly like the
      *  relay does) + a Telegram request; returns the Telegram reply time in ms
      *  (handshake + request), or -1 on failure. */
+    /** Last failure reason per host (diagnostics for the log). */
+    private static final java.util.Map<Long, String> LAST_ERR = new java.util.concurrent.ConcurrentHashMap<>();
+
     private static int testOnce(ProxyEntry p, HandshakeMode m) {
         io.autoconnector.engine.relay.UpstreamConnector.Channel ch = null;
         try {
@@ -213,6 +237,8 @@ public final class AutoOptimizer {
             int hs = (ch.totalMs > 0 && ch.connectMs >= 0) ? ch.totalMs - ch.connectMs : 0;
             return Math.max(1, hs + req);
         } catch (Throwable t) {
+            String msg = t.getMessage() != null ? t.getMessage() : t.getClass().getSimpleName();
+            LAST_ERR.put(p.id, msg.length() > 60 ? msg.substring(0, 60) : msg);
             return -1;
         } finally {
             if (ch != null) try { ch.socket.close(); } catch (Throwable ignored) {}
