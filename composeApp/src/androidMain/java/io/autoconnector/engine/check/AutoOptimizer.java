@@ -114,13 +114,16 @@ public final class AutoOptimizer {
                 boolean proven = e != null && e.tgMs > 0 && now0 - e.at < 30 * 60_000L;
                 if (proven && p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
             }
-            for (ProxyEntry p : top) {
-                if (hosts.size() >= HOSTS) break;
-                if (p.isFakeTls() && !contains(hosts, p)) hosts.add(p);
-            }
+            // No fallback to merely "alive" hosts: those are mostly half-open
+            // FakeTLS servers that reject every method (EOF / alert), which made
+            // all methods score the same 2/24.
             if (hosts.size() < 4) {
-                summary = "🧠 Waiting for more live proxies";
-                log.line(summary);
+                summary = "Connection method: not enough working FakeTLS proxies to compare · kept "
+                        + shortLabel(HandshakeMode.fromOrdinal(prefs.handshakeMode()));
+                String concTxt = tuneScanParallelism(prefs, provenSample(top, mode), 
+                        HandshakeMode.fromOrdinal(prefs.handshakeMode()), log);
+                if (concTxt != null) summary = summary + " · " + concTxt;
+                log.line("🧠 AI optimizer: " + summary);
                 return true;
             }
             LAST_ERR.clear();
@@ -199,7 +202,7 @@ public final class AutoOptimizer {
             // answers is kept (too many parallel probes on a weak network make
             // healthy proxies time out).
             HandshakeMode useMode = apply ? best.mode : current;
-            String concTxt = tuneScanParallelism(prefs, top, useMode, log);
+            String concTxt = tuneScanParallelism(prefs, provenSample(top, mode), useMode, log);
             if (concTxt != null) summary = summary + " · " + concTxt;
             log.line("🧠 AI optimizer: " + summary);
             return true;
@@ -243,6 +246,18 @@ public final class AutoOptimizer {
         } finally {
             if (ch != null) try { ch.socket.close(); } catch (Throwable ignored) {}
         }
+    }
+
+    /** Hosts whose full speed test passed in the last 30 min (any proxy type) —
+     *  the parallelism test must measure the network, not dead hosts. */
+    private static List<ProxyEntry> provenSample(List<ProxyEntry> top, NetworkMode mode) {
+        long now = System.currentTimeMillis();
+        List<ProxyEntry> out = new ArrayList<>();
+        for (ProxyEntry p : top) {
+            LatencyBoard.Entry e = LatencyBoard.get(p.id, mode);
+            if (e != null && e.tgMs > 0 && now - e.at < 30 * 60_000L) out.add(p);
+        }
+        return out;
     }
 
     /** Returns a short result ("scan ×16"), or null if not enough hosts. */
