@@ -78,6 +78,19 @@ jobs:
           fi
           ls -la out
 
+      - name: Diagnostics
+        if: failure()
+        shell: bash
+        run: |
+          echo "----- tail of build.log -----"
+          tail -80 build.log || echo "(no build.log)"
+          mkdir -p "$RUNNER_TEMP/logs"
+          cp build.log "$RUNNER_TEMP/logs/win-build.log" 2>/dev/null || echo "no build.log" > "$RUNNER_TEMP/logs/win-build.log"
+          cd "$RUNNER_TEMP/logs"
+          git init -q && git checkout -q -b ci-logs-win && git add -A
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "win build log ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-logs-win || echo "push failed"
+
       - uses: actions/upload-artifact@v4
         with:
           name: AutoConnector-windows
