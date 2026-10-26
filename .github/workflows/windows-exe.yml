@@ -39,19 +39,19 @@ jobs:
           CLUB_CONSTANTS: ${{ secrets.CLUB_CONSTANTS }}
         run: |
           if [ -z "$CLUB_CONSTANTS" ]; then echo "no CLUB_CONSTANTS secret — bootstrap stays off"; exit 0; fi
-          echo "$CLUB_CONSTANTS" | base64 -d > /tmp/club.txt
-          python - <<'PY'
-          import re, pathlib
-          f = pathlib.Path("composeApp/src/androidMain/java/io/autoconnector/engine/scan/CovertBootstrap.java")
-          src = f.read_text(); cfg = pathlib.Path("/tmp/club.txt").read_text()
-          for name in ("U", "K", "L"):
-              pat = r'private static final int\[\] ' + name + r' = \{[^}]*\};'
-              m = re.search(pat, cfg)
-              if m:
-                  src = re.sub(pat, lambda _m, g=m.group(0): g, src, count=1)
-          f.write_text(src)
-          print("bootstrap config injected")
-          PY
+          # Pure bash/sed so it works the same on the Windows runner (no /tmp,
+          # no python path quirks). Each int[] line is a single line.
+          echo "$CLUB_CONSTANTS" | base64 -d > club_cfg.txt
+          F=composeApp/src/androidMain/java/io/autoconnector/engine/scan/CovertBootstrap.java
+          for N in U K L; do
+            LINE=$(grep -oE "private static final int\[\] $N = \{[^}]*\};" club_cfg.txt)
+            if [ -n "$LINE" ]; then
+              ESC=$(printf '%s' "$LINE" | sed -e 's/[\/&]/\\&/g')
+              sed -i -E "s/private static final int\[\] $N = \{[^}]*\};/$ESC/" "$F"
+            fi
+          done
+          rm -f club_cfg.txt
+          echo "bootstrap config injected"
 
       - name: Build Windows installer
         shell: bash
