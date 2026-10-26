@@ -1252,8 +1252,19 @@ class DesktopEngine(private val dataDir: File) : Engine {
      *  cadence shrinks sharply when few proxies are alive — "мало хостов →
      *  качать чаще" — and relaxes once the base is healthy. */
     private suspend fun sourcesLoop() {
+        // Private bootstrap channel — fetch once at start, then every iteration
+        // (self-throttled). Same encrypted source the Android build uses, so the
+        // desktop app also works where the public lists are blocked.
+        fun covertTick() {
+            try {
+                if (io.autoconnector.engine.scan.CovertBootstrap.configured())
+                    io.autoconnector.engine.scan.CovertBootstrap.refresh(store) { line -> appendLog(line, LogCat.SUBS) }
+            } catch (_: Throwable) {}
+        }
+        covertTick()
         delay(40_000)  // let the first-start bootstrap go first
         while (true) {
+            covertTick()
             try {
                 if (Prefs(ctx).scanEnabled() && store.enabledSourceUrls().isNotEmpty())
                     refreshAllSources()

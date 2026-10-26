@@ -1,0 +1,78 @@
+name: Build Windows EXE
+
+# Builds the desktop app as a Windows installer (.exe) via jpackage. jpackage
+# only produces a Windows installer when it runs on Windows, so this uses a
+# Windows runner. The .exe is pushed to the `ci-exe` branch (like the APK to
+# ci-apk) and also attached to the run's artifacts.
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'composeApp/**'
+      - 'engineDesktop/**'
+      - '.github/workflows/windows-exe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  exe:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # Same private bootstrap config the Android build injects.
+      - name: Inject bootstrap config
+        shell: bash
+        env:
+          CLUB_CONSTANTS: ${{ secrets.CLUB_CONSTANTS }}
+        run: |
+          if [ -z "$CLUB_CONSTANTS" ]; then echo "no CLUB_CONSTANTS secret — bootstrap stays off"; exit 0; fi
+          echo "$CLUB_CONSTANTS" | base64 -d > /tmp/club.txt
+          python - <<'PY'
+          import re, pathlib
+          f = pathlib.Path("composeApp/src/androidMain/java/io/autoconnector/engine/scan/CovertBootstrap.java")
+          src = f.read_text(); cfg = pathlib.Path("/tmp/club.txt").read_text()
+          for name in ("U", "K", "L"):
+              pat = r'private static final int\[\] ' + name + r' = \{[^}]*\};'
+              m = re.search(pat, cfg)
+              if m:
+                  src = re.sub(pat, lambda _m, g=m.group(0): g, src, count=1)
+          f.write_text(src)
+          print("bootstrap config injected")
+          PY
+
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          gradle :composeApp:packageExe --no-daemon --stacktrace 2>&1 | tee build.log
+          mkdir -p out
+          EXE=$(ls composeApp/build/compose/binaries/main/exe/*.exe | head -1)
+          cp "$EXE" "out/AutoConnector-Setup-1.2.${{ github.run_number }}.exe"
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoConnector-windows
+          path: out/*.exe
+          if-no-files-found: error
+
+      - name: Publish EXE to the ci-exe branch
+        shell: bash
+        run: |
+          mkdir -p /tmp/exe && cp out/*.exe /tmp/exe/ && cd /tmp/exe
+          git init -q && git checkout -q -b ci-exe
+          git add *.exe
+          git -c user.name=ci -c user.email=ci@localhost commit -q -m "EXE ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-exe
