@@ -477,6 +477,39 @@ class DesktopEngine(private val dataDir: File) : Engine {
 
     override fun dataDirPath(): String = dataDir.absolutePath
 
+    /** Writes the full in-memory log + a small state snapshot to a text file in
+     *  the data folder and opens that folder, so it can be sent for diagnosis. */
+    override fun shareLogs() {
+        try {
+            dataDir.mkdirs()
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss").format(java.util.Date())
+            val f = File(dataDir, "autoconnector-log-$stamp.txt")
+            val sb = StringBuilder(1 shl 16)
+            val st = _state.value
+            sb.append("=== AutoConnector (desktop) diagnostics ===\n")
+            sb.append("time: ${java.util.Date()}\n")
+            sb.append("os: ${System.getProperty("os.name")} ${System.getProperty("os.version")}\n")
+            sb.append("ports: ${st.portA}/${st.portB} · relay live: ${st.connLiveOut} · proxies alive: ${st.aliveCount}\n")
+            sb.append("active: ${st.currentProxy?.host ?: "—"}\n")
+            sb.append("--- measured speeds (KB/s) ---\n")
+            try {
+                val now = System.currentTimeMillis()
+                for (s in io.autoconnector.engine.relay.SpeedBoard.snapshot())
+                    sb.append("${s.proxyId} mode=${s.mode} down=${s.effective(now)} up=${s.effectiveUp(now)} samples=${s.samples}/${s.upSamples}\n")
+            } catch (_: Throwable) {}
+            sb.append("\n=== log ===\n")
+            for (l in _logs.value) {
+                val t = java.text.SimpleDateFormat("HH:mm:ss").format(java.util.Date(l.ts))
+                sb.append("$t [${l.cat}] ${l.text}\n")
+            }
+            f.writeText(sb.toString())
+            appendLog("⤓ log saved: ${f.name}")
+            java.awt.Desktop.getDesktop().open(dataDir)
+        } catch (t: Throwable) {
+            appendLog("⚠ couldn't save log: ${t.message}")
+        }
+    }
+
     override fun openDataFolder() {
         try {
             dataDir.mkdirs()
