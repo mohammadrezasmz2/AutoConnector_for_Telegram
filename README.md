@@ -1,169 +1,169 @@
-[ENGLISH](README.en.md) · [AMHARIC](README.am.md) · [ARABIC](README.ar.md) · [AZERBAIJANI](README.az.md) · [BENGALI](README.bn.md) · [BURMESE](README.my.md) · [CHINESE](README.zh.md) · [DARI](README.prs.md) · [FRENCH](README.fr.md) · [GERMAN](README.de.md) · [HAUSA](README.ha.md) · [HINDI](README.hi.md) · [INDONESIAN](README.id.md) · [ITALIAN](README.it.md) · [JAPANESE](README.ja.md) · [KAZAKH](README.kk.md) · [KOREAN](README.ko.md) · [MARATHI](README.mr.md) · [PASHTO](README.ps.md) · [PERSIAN](README.fa.md) · [POLISH](README.pl.md) · [PORTUGUESE](README.pt.md) · [PUNJABI](README.pa.md) · [RUSSIAN](README.md) · [SPANISH](README.es.md) · [TAMIL](README.ta.md) · [TELUGU](README.te.md) · [THAI](README.th.md) · [TIGRINYA](README.ti.md) · [TURKISH](README.tr.md) · [UKRAINIAN](README.uk.md) · [URDU](README.ur.md) · [UZBEK](README.uz.md) · [VIETNAMESE](README.vi.md)
+[ENGLISH](README.en.md) · [AMHARIC](README.am.md) · [ARABIC](README.ar.md) · [AZERBAIJANI](README.az.md) · [BENGALI](README.bn.md) · [BURMESE](README.my.md) · [CHINESE](README.zh.md) · [DARI](README.prs.md) · [FRENCH](README.fr.md) · [GERMAN](README.de.md) · [HAUSA](README.ha.md) · [HINDI](README.hi.md) · [INDONESIAN](README.id.md) · [ITALIAN](README.it.md) · [JAPANESE](README.ja.md) · [KAZAKH](README.kk.md) · [KOREAN](README.ko.md) · [MARATHI](README.mr.md) · [PASHTO](README.ps.md) · [PERSIAN](README.fa.md) · [POLISH](README.pl.md) · [PORTUGUESE](README.pt.md) · [PUNJABI](README.pa.md) · [RUSSIAN](README.ru.md) · [SPANISH](README.es.md) · [TAMIL](README.ta.md) · [TELUGU](README.te.md) · [THAI](README.th.md) · [TIGRINYA](README.ti.md) · [TURKISH](README.tr.md) · [UKRAINIAN](README.uk.md) · [URDU](README.ur.md) · [UZBEK](README.uz.md) · [VIETNAMESE](README.vi.md)
 
 **[Download (latest)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
 
 # AutoConnector for Telegram
 
-AutoConnector for Telegram — приложение само находит в интернете MTProto-прокси, проверяет их на живость и поднимает локальный релей, через который Telegram стабильно работает даже там, где он заблокирован. Пользователю не нужно вручную искать рабочие прокси — AutoConnector for Telegram постоянно подбирает самые быстрые и живые, тестирует их именно с вашего компьютера/телефона.
+AutoConnector for Telegram — the app finds MTProto proxies on the internet by itself, checks that they are alive, and brings up a local relay through which Telegram keeps working reliably even where it is blocked. The user doesn't have to hunt for working proxies by hand — AutoConnector for Telegram continuously picks the fastest live ones and tests them specifically from your computer/phone.
 
-Другими словами: это сканер тг-каналов и всевозможных подписок с публичными бесплатными проксями MTProto, с автоподстановкой в ваш Телеграм. Обновлять клиент Телеграма не нужно. Доступность проксей проверяет именно с вашего устройства и сетевого окружения. Работает на WiFi+LTE без VPN.
+In other words: it's a scanner of Telegram channels and all sorts of subscriptions with public free MTProto proxies, with auto-insertion into your Telegram. There's no need to update the Telegram client. Proxy reachability is checked from your own device and network environment. Works on Wi-Fi + LTE without a VPN.
 
-Платформы: Android, Windows, Linux, MacBook.
+Platforms: Android, Windows, Linux, MacBook.
 
-Андроид версия работает сама по себе, а в Windows нужно поставить движок проксирования "СПЛИТ..." или "КОАЛЕСИНГ.." - в настройках или кнопка справа от слов "Телеграм подключен" и большого серого/зеленого круга. Либо подбирать тот, что лично у вас будет работать лучше, т.к. блокировки везде разные. Режимы "КОАЛЕСИНГ.." на крайний случай - так Телеграм начнет работать, но испортится отправка/показ медиа контента в чатах.
+The Android version works on its own, while on Windows you need to enable a proxying engine — "SPLIT..." or "COALESCING.." — in the settings, or via the button to the right of the words "Telegram connected" and the large gray/green circle. Or pick the one that works best for you personally, since blocking differs everywhere. The "COALESCING.." modes are a last resort — Telegram will start working, but sending/displaying media content in chats will break.
 
-Рекомендую отключить файрвол типа COMODO, если используете: загоняет приложение в песочницу и его фаервол портит исходящие коннекты к MTProto проксям. Или запустите приложение в виртуалке, там полностью изменится TCP стек, поведение АвтоКоннектора будет иным.
+I recommend disabling a firewall like COMODO if you use one: it puts the app into a sandbox, and its firewall ruins outgoing connections to MTProto proxies. Or run the app in a virtual machine — there the TCP stack changes completely, and AutoConnector's behavior will be different.
 
-А так же помогайте руками Телеграму переключаться между портами 55001 и 55002 (в настройках проксей), чтобы быстрее достичь рабочего прокси и надписи "Подключено" внутри Телеграма.
+Also, help Telegram switch between ports 55001 and 55002 by hand (in the proxy settings) to reach a working proxy faster and get the "Connected" label inside Telegram.
 
-# ✨ Возможности
+# ✨ Features
 
-- **Авто-поиск прокси** — сканирует десятки открытых страниц и подписок.
-- **Проверка на живость** — реальный MTProto-handshake, рейтинг по скорости/стабильности.
-- **Локальный релей** — Telegram подключается к `127.0.0.1`, а AutoConnector for
-  Telegram маршрутизирует трафик через лучший живой прокси и переключается,
-  если текущий упал.
-- **Анти-DPI** — набор хитростей маскировки (имитация браузеров, дробление
-  пакетов, FakeTLS и др.); режим «Авто-перебор» сам подбирает рабочий.
-- **Подробная статистика** — живые/мёртвые прокси, скорость, латенси, трафик,
-  эффективность каждой анти-DPI хитрости.
-- **Каталог прокси** — топ по рейтингу с детальной карточкой по каждому хосту:
-  для каждого хоста видно «подключений Telegram / успешных / всего проверок» и
-  историю последних 25 попыток (TCP/TLS/общая длительность коннекта, принято/передано байт).
-- **Гибкий выбор хостов** — ползунок «широты»: от «держаться лучших проверенных»
-  до «максимально широко пробовать разные живые»; когда Telegram мечется по
-  портам реле, выбор расширяется автоматически. Отдельный ползунок — таймаут
-  коннекта (100 мс … 15 с) и «гонка апстримов» (несколько коннектов параллельно).
-- **12 языков** интерфейса с автоопределением, RTL-поддержка.
+- **Auto proxy search** — scans dozens of open pages and subscriptions.
+- **Liveness checks** — a real MTProto handshake, rated by speed/stability.
+- **Local relay** — Telegram connects to `127.0.0.1`, and AutoConnector for
+  Telegram routes traffic through the best live proxy and switches over
+  if the current one goes down.
+- **Anti-DPI** — a set of masking tricks (browser mimicry, packet
+  splitting, FakeTLS, etc.); the "Auto-rotate" mode picks a working one by itself.
+- **Detailed statistics** — live/dead proxies, speed, latency, traffic,
+  the effectiveness of each anti-DPI trick.
+- **Proxy catalog** — top by rating, with a detailed card per host:
+  each host shows "Telegram connects / successful / total checks" and
+  the last 25 attempts (TCP/TLS/total connect duration, bytes received/sent).
+- **Flexible host selection** — a "breadth" slider: from "stick to the best proven
+  hosts" to "try as widely as possible across the live ones"; when Telegram bounces
+  between relay ports, the selection widens automatically. A separate slider — the
+  connect timeout (100 ms … 15 s) — and an "upstream race" (several parallel connects).
+- **12 UI languages** with auto-detection and RTL support.
 
-> ### Что нового по сравнению с 1.0.19
-> - **Раздельные базы и рейтинги хостов по типу сети** — VPN / Wi-Fi / LTE /
->   Ethernet / White: каждый вид подключения ведёт свой пул живых прокси, чтобы
->   не подставлять Telegram то, что работает только под VPN.
-> - **Гонка апстримов** — несколько коннектов параллельно, побеждает самый
->   быстрый живой; ползунок «широты выбора» (от лучших проверенных до максимально
->   широкого) с авто-расширением пула, когда Telegram мечется по портам реле;
->   настраиваемый таймаут коннекта (100 мс…15 с).
-> - **Каталог хостов с детальной карточкой** — «подключений Telegram / успешных /
->   всего проверок» и история последних 25 попыток по хосту (время TCP/TLS,
->   длительность коннекта, принято/передано байт).
-> - **Живые графики** скорости, пинга и активности портов (по секундам и минутам)
->   и графики сканирования.
-> - **Анти-DPI и движки проксирования** — набор маскировочных хитростей с
->   «Авто-перебором», движок обфускации и экспериментальные движки (сплит/
->   коалесинг) под конкретную блокировку.
-> - **Экспорт/импорт** настроек, хостов и подписок + полный сброс к заводскому виду.
-> - **Быстрый холодный старт** — агрессивная многопоточная загрузка подписок через
->   несколько анонимайзеров.
-> - **26 языков** интерфейса с автоопределением (+RTL).
+> ### What's new since 1.0.19
+> - **Separate host pools and ratings per network type** — VPN / Wi-Fi / LTE /
+>   Ethernet / White: each connection type keeps its own pool of live proxies, so
+>   Telegram is never handed something that only works under a VPN.
+> - **Upstream race** — several connects in parallel, the fastest live one wins;
+>   a "selection breadth" slider (from best-proven to as-wide-as-possible) with the
+>   pool auto-widening when Telegram bounces between relay ports;
+>   a configurable connect timeout (100 ms…15 s).
+> - **Host catalog with a detailed card** — "Telegram connects / successful /
+>   total checks" plus the last 25 attempts per host (TCP/TLS time,
+>   connect duration, bytes received/sent).
+> - **Live graphs** of speed, ping and port activity (per second and per minute)
+>   plus scan graphs.
+> - **Anti-DPI and proxying engines** — a set of masking tricks with an
+>   "Auto-rotate" mode, an obfuscation engine, and experimental engines (split/
+>   coalescing) to match a specific block.
+> - **Export/import** of settings, hosts and subscriptions + a full factory reset.
+> - **Fast cold start** — aggressive multi-threaded subscription download through
+>   several anonymizers.
+> - **26 UI languages** with auto-detection (+RTL).
 
-# При первом запуске важно:
+# Important on first launch:
 
-- Провести настройку Телеграма, указав фиксированный SOCKS5 прокси localhost:55001 и localhost:55002.
-- Удалите другие прокси, кроме этих. 
-- Включите в Телеграме "Использовать прокси".
-- Не блокировать уведомления на Андроиде, иначе в фоне работать не будет.
-- При первом запуске ждать ~15 минут, пока скачает и переберет MTProto прокси и пока сам Телеграм клиент переключится.
+- Configure Telegram with a fixed SOCKS5 proxy localhost:55001 and localhost:55002.
+- Delete the other proxies except these.
+- Enable "Use proxy" in Telegram.
+- Don't block notifications on Android, otherwise it won't run in the background.
+- On first launch, wait ~15 minutes while it downloads and cycles through MTProto proxies and while the Telegram client itself switches over.
 
-# Если ничего не работает
+# If nothing works
 
-1. Если НИЧЕГО не работает, используйте программу как авто каталог живых проксей. По хоткею CTRL+WIN+ALT+P и CTRL+SHIFT+ALT+P вы можете быстро без открытия окна АвтоКоннектора добавить случайный прокси прямо к вам в Телеграм. Получится, что Телеграм напрямую пойдет к проксе, без АвтоКоннектора, но вам не нужно будет мониторить чаты, где публикуют бесплатные прокси и тратить время на их проверку.  Пусть АвтоКоннектора живет в трее, отключите тумблер "Коннектор", оставьте тумблер "Скан". 
+1. If NOTHING works, use the program as an auto catalog of live proxies. With the hotkeys CTRL+WIN+ALT+P and CTRL+SHIFT+ALT+P you can quickly add a random proxy straight into your Telegram without even opening the AutoConnector window. The result is that Telegram goes directly to the proxy, without AutoConnector, but you won't have to monitor the chats where free proxies are posted and waste time checking them. Let AutoConnector live in the tray, turn off the "Connector" toggle, leave the "Scan" toggle on.
 
-2. Попробуйте АвтоКоннектор на другом устройстве: телефон, телефон друга, компьютер. На разных платформах Windows/Android совершенно разный принцип обхода блокировок. Скорее всего на Android будет работать без каких-либо настроек.
+2. Try AutoConnector on another device: your phone, a friend's phone, a computer. The principle of bypassing blocks is completely different across the Windows/Android platforms. Most likely it will work on Android without any settings at all.
 
-3. Если ничего не работает, то включите временно VPN на день и тестируйте АвтоКоннектор + Телеграм этот день (Телеграм подключить через АвтоКоннектор, указав прокси на портах 55001 и 55002). Внутри программы включите галочку "При включенном VPN -> проксировать к MTProto". Посмотрите, АвтоКоннектор начал работать? Если да, то вывод очевиден - АвтоКоннектор успешно ищет прокси, успешно транслирует туда трафик Телеграма, но если VPN выключить, то система блокировок в вашей стране слишком жестко блокирует все исходящие соединения. В таком случае вам придется потратить полчаса времени на перебор средств в АвтоКоннекторе, чтобы подобрать рабочий, умеющий обойти блокировки. Полностью перебирать все варианты автоматически программа пока не умеет (имеется лишь авто перебор anti-DPI трюков). После эксперимента отключайте VPN и галочку "При включенном VPN проксировать к MTProto" верните в состояние "Проксировать напрямую".   
+3. If nothing works, then temporarily enable a VPN for a day and test AutoConnector + Telegram during that day (connect Telegram through AutoConnector, specifying proxies on ports 55001 and 55002). Inside the program, tick the "When VPN is on -> proxy to MTProto" checkbox. See whether AutoConnector started working. If yes, then the conclusion is obvious — AutoConnector successfully finds proxies and successfully relays Telegram's traffic there, but if you turn the VPN off, the blocking system in your country blocks all outgoing connections too harshly. In that case you'll have to spend half an hour cycling through the tools in AutoConnector to pick a working one that can get past the blocks. The program can't yet automatically cycle through all the options (there's only the auto-rotation of anti-DPI tricks). After the experiment, turn off the VPN and return the "When VPN is on, proxy to MTProto" checkbox to the "Proxy directly" state.
 
-4. Альтернатива пункту (3). Поставьте виртуалку на вашем Windows/Linux хосте. В ней запустите Телеграм + АвтоКоннектор. Начало работать идеально даже без VPN? Значит ваш хост портит ваши соединения, а не система блокировок в вашей стране! Причины: файрволы, антивирусы, остатки от VPN. Если антивирус помещает АвтоКоннектор в песочницу, либо файрвол блокирует необычные anti-DPI трюки от АвтоКоннектора, то вам придется включить АвтоКоннектор на хосте в обход (исключения) антивируса и файрвола. Либо выключите их вообще на время, перезагрузив компьютер. Да, как не смешно советовать, перезагрузите компьютер, т.к. VPN программы часто глючат и могут оставить на хосте TUN устройство в полуживом состоянии. После перезагрузки не запускайте VPN, сначала тестируйте АвтоКоннектор.  
+4. An alternative to point (3). Install a virtual machine on your Windows/Linux host. Run Telegram + AutoConnector inside it. Did it start working perfectly even without a VPN? That means your host is ruining your connections, not the blocking system in your country! Causes: firewalls, antiviruses, leftovers from a VPN. If the antivirus puts AutoConnector into a sandbox, or the firewall blocks AutoConnector's unusual anti-DPI tricks, then you'll have to run AutoConnector on the host bypassing the antivirus and firewall (exceptions). Or turn them off entirely for a while and reboot the computer. Yes, funny as it is to advise, reboot the computer, because VPN programs often glitch and can leave a TUN device on the host in a half-alive state. After the reboot, don't start the VPN — test AutoConnector first.
 
-  5. Попробуйте обход блокировок. Кнопку включения ищите в настройках или на главном экране (ищите кнопку справа от большого круга серого/зеленого цвета). Вам придется уделить ~15 минут времени. Они состоят из 3х групп:  
-	  - Движок проксирования. Попробуйте любой Коалесинг* режим. Скорее всего сразу заработает. Но при этом не будут грузиться картинки/видео в Телеграме (это не баг, а фича/компромисс). Далее попробуйте Сплит* режимы, если заработает - картинки грузятся. Или верните в "отключено".
-	  - Попробуйте "Параллельная гонка апстримов". Это значит, что когда Телеграм делает 1 коннект к проксе, АвтоКоннектор делает 5-30 коннектов к разным MTProto проксям и подсовывает Телеграму лучший. В настройках приложения можно выбрать таймауты (3-5 сек) и число параллельных апстримов до 30 штук.  
-	  - Включите "Авто-перебор anti-DPI трюков", их программа сама будет перебирать.
-	  - Чтобы Телеграм быстрее переключался, в настройках прокси (в Телеграме) руками каждые 5-10 секунд переключайтесь на следующий порт по кругу 55001->55002->55001->...  
-    
-6. Самая мощная/быстрая комбинация настроек:  
-	- таймаут коннектов 5с  
-	- широта выбора хостов 100%  
-	- параллельных коннектов 30  
-	- авто перебор DPI трюков  
-	- параллельная гонка апстримов  
-	- движок проксирования: Коалесинг*  
-	- внутри телеграма в окне проксей каждые 10 секунд тыкайте в новый порт, по кругу.
-  
-7. Политика настройки на Windows и Android разная! Все, что написано выше, в основном касается Windows. На Андроиде у большинства работает без каких-либо настроек (при любых настройках). В Windows другой TCP стек и другое Телеграм приложение, оно намного хуже по качеству, чем Андроид. Попробуйте какой-то другой клиент Телеграма, а не только официальный.  
+  5. Try bypassing the blocks. Look for the enable button in the settings or on the main screen (look for the button to the right of the large gray/green circle). You'll have to spend ~15 minutes. They consist of 3 groups:
+	  - Proxying engine. Try any Coalescing* mode. It will most likely work right away. But images/videos won't load in Telegram with it (this isn't a bug, but a feature/trade-off). Next, try the Split* modes; if it works — images load. Or set it back to "off".
+	  - Try "Parallel upstream race". This means that when Telegram makes 1 connect to a proxy, AutoConnector makes 5-30 connects to different MTProto proxies and hands Telegram the best one. In the app settings you can choose timeouts (3-5 sec) and the number of parallel upstreams, up to 30.
+	  - Enable "Auto-rotate anti-DPI tricks", and the program will cycle through them by itself.
+	  - To make Telegram switch faster, in the proxy settings (in Telegram) manually switch to the next port in a loop every 5-10 seconds: 55001->55002->55001->...
 
-8. Пожалуйста, пишите подробные багрепорты на любом языке в https://t.me/AutoConnector_for_Telegram - платформа, какие способы пробовали (настройки), имеете ли файрвол/антивирус, пробовали ли из VPN/виртуалки. Пишите и любые позитивные рецепты, что попробовали и как оно заработало.
+6. The most powerful/fastest combination of settings:
+	- connect timeout 5s
+	- host selection breadth 100%
+	- 30 parallel connects
+	- auto-rotate DPI tricks
+	- parallel upstream race
+	- proxying engine: Coalescing*
+	- inside Telegram, in the proxy window, tap a new port every 10 seconds, in a loop.
+
+7. The configuration policy on Windows and Android is different! Everything written above mostly concerns Windows. On Android it works for most people without any settings (with any settings). Windows has a different TCP stack and a different Telegram app, which is much worse in quality than Android. Try some other Telegram client, not just the official one.
+
+8. Please write detailed bug reports in any language at https://t.me/AutoConnector_for_Telegram — your platform, which methods you tried (settings), whether you have a firewall/antivirus, whether you tried from a VPN/virtual machine. Also write any positive recipes — what you tried and how it started working.
 
 
-## 📥 Скачать
+## 📥 Download
 
-Все сборки — на странице релизов: **[GitHub Releases (latest)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
+All builds are on the releases page: **[GitHub Releases (latest)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
 
-| ОС | Файл | Запуск |
+| OS | File | Run |
 |----|------|--------|
-| **Android** | `AutoConnector_for_Telegram.apk` | установить APK (вне Google Play — разрешите установку из источника) |
-| **Windows** 10/11 x64 | `AutoConnector-for-Telegram-windows-x64.zip` | распаковать → запустить `AutoConnector\AutoConnector.exe` |
-| **Linux** x64 | `AutoConnector-for-Telegram-linux-x64.tar.gz` | распаковать → `./AutoConnector/bin/AutoConnector` |
-| **macOS** 11+ (Apple Silicon) | `AutoConnector-for-Telegram-macos.tar.gz` | распаковать → двойной клик по `AutoConnector.app` (если блокирует — `xattr -dr com.apple.quarantine AutoConnector.app`) |
+| **Android** | `AutoConnector_for_Telegram.apk` | install the APK (outside Google Play — allow install from source) |
+| **Windows** 10/11 x64 | `AutoConnector-for-Telegram-windows-x64.zip` | extract → run `AutoConnector\AutoConnector.exe` |
+| **Linux** x64 | `AutoConnector-for-Telegram-linux-x64.tar.gz` | extract → `./AutoConnector/bin/AutoConnector` |
+| **macOS** 11+ (Apple Silicon) | `AutoConnector-for-Telegram-macos.tar.gz` | extract → double-click `AutoConnector.app` (if blocked — `xattr -dr com.apple.quarantine AutoConnector.app`) |
 
-### 🔐 Проверка подлинности (release 1.1.0)
+### 🔐 Authenticity (release 1.1.0)
 
-APK подписан release-сертификатом (apksigner, схемы v1+v2+v3). Перед установкой можно сверить:
+The APK is signed with a release certificate (apksigner, schemes v1+v2+v3). Before installing you can verify:
 
-- **Сертификат подписи (SHA-256):** `cb23a18c0cf8a23e43b5b63d199fc1440d3e4d6533e1309d3f92f273fe626a5a`
-  (CN=AutoConnector for Telegram) — этот отпечаток одинаков для всех будущих релизов.
+- **Signing certificate (SHA-256):** `cb23a18c0cf8a23e43b5b63d199fc1440d3e4d6533e1309d3f92f273fe626a5a`
+  (CN=AutoConnector for Telegram) — this fingerprint is identical across all future releases.
 - **APK SHA-256:** `d7652e7f5c3a2174a3b7805c2539df7da080765c9b0f581a7ac5943987c9b935`
 - **Windows zip SHA-256:** `1d8d675936387e89038dc4943d7f99200c1b735b86e1f79bd953cd93e60f0217`
 - **Linux tar.gz SHA-256:** `9160ea519309dc62750a4a930dc1aae6e20dbcefd21b426fa85b48ace6f3e8f8`
 - **macOS tar.gz SHA-256:** `322082ef3f06955ed299be790bce453e47db37fca17daea54724d60698446bc7`
 
-Проверка: `apksigner verify --print-certs AutoConnector_for_Telegram.apk` (сертификат) и
-`sha256sum -c SHA256SUMS.txt` (целостность файлов; `SHA256SUMS.txt` приложен к релизу).
+Verify with: `apksigner verify --print-certs AutoConnector_for_Telegram.apk` (certificate) and
+`sha256sum -c SHA256SUMS.txt` (file integrity; `SHA256SUMS.txt` is attached to the release).
 
-## 📸 Скриншоты
+## 📸 Screenshots
 
 <table>
 <tr>
-<td align="center"><img src="docs/screenshots/connector.png" width="200"><br><sub>Коннектор — активная сессия</sub></td>
-<td align="center"><img src="docs/screenshots/scan.png" width="200"><br><sub>Скан и графики</sub></td>
-<td align="center"><img src="docs/screenshots/catalog.png" width="200"><br><sub>Каталог прокси (по режимам)</sub></td>
-<td align="center"><img src="docs/screenshots/host-card.png" width="200"><br><sub>Карточка хоста + история</sub></td>
+<td align="center"><img src="docs/screenshots/connector.png" width="200"><br><sub>Connector — active session</sub></td>
+<td align="center"><img src="docs/screenshots/scan.png" width="200"><br><sub>Scan and graphs</sub></td>
+<td align="center"><img src="docs/screenshots/catalog.png" width="200"><br><sub>Proxy catalog (by mode)</sub></td>
+<td align="center"><img src="docs/screenshots/host-card.png" width="200"><br><sub>Host card + history</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/screenshots/logs.png" width="200"><br><sub>Логи релея</sub></td>
-<td align="center"><img src="docs/screenshots/settings.png" width="200"><br><sub>Настройки</sub></td>
-<td align="center"><img src="docs/screenshots/export.png" width="200"><br><sub>Экспорт tg://-ссылок</sub></td>
-<td align="center"><img src="docs/screenshots/hotkeys.png" width="200"><br><sub>Горячие клавиши</sub></td>
+<td align="center"><img src="docs/screenshots/logs.png" width="200"><br><sub>Relay logs</sub></td>
+<td align="center"><img src="docs/screenshots/settings.png" width="200"><br><sub>Settings</sub></td>
+<td align="center"><img src="docs/screenshots/export.png" width="200"><br><sub>Export of tg:// links</sub></td>
+<td align="center"><img src="docs/screenshots/hotkeys.png" width="200"><br><sub>Hotkeys</sub></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/screenshots/guide.png" width="200"><br><sub>Гайд подключения</sub></td>
-<td align="center"><img src="docs/screenshots/connector-ru.png" width="200"><br><sub>Коннектор · русский UI</sub></td>
-<td align="center"><img src="docs/screenshots/scan-ru.png" width="200"><br><sub>Скан · русский UI</sub></td>
-<td align="center"><sub>26 языков интерфейса<br>с автоопределением</sub></td>
+<td align="center"><img src="docs/screenshots/guide.png" width="200"><br><sub>Connection guide</sub></td>
+<td align="center"><img src="docs/screenshots/connector-ru.png" width="200"><br><sub>Connector · Russian UI</sub></td>
+<td align="center"><img src="docs/screenshots/scan-ru.png" width="200"><br><sub>Scan · Russian UI</sub></td>
+<td align="center"><sub>26 UI languages<br>with auto-detection</sub></td>
 </tr>
 </table>
 
 
-## Обратная связь
+## Feedback
 
-Баги и замечания скидывайте сюда - https://t.me/AutoConnector_for_Telegram
+Send bugs and remarks here - https://t.me/AutoConnector_for_Telegram
 
-## 🔐 Проверка подписи
+## 🔐 Signature verification
 
-APK из релизов подписан release-ключом. Проверить можно так:
+The APK from releases is signed with a release key. You can verify it like this:
 
 ```bash
-# Контрольная сумма (сравните с SHA256SUMS.txt из релиза)
+# Checksum (compare with SHA256SUMS.txt from the release)
 sha256sum AutoConnector_for_Telegram.apk
 
-# Цифровая подпись и отпечаток сертификата
+# Digital signature and certificate fingerprint
 apksigner verify --print-certs AutoConnector_for_Telegram.apk
 ```
 
-Отпечаток сертификата (SHA-256), которым подписаны официальные сборки,
-публикуется в описании каждого релиза — сверьте его, чтобы убедиться, что APK
-не подменён.
+The certificate fingerprint (SHA-256) used to sign the official builds is
+published in each release's description — compare it to make sure the APK
+hasn't been tampered with.
 
-## 📄 Лицензия
+## 📄 License
 
 [MIT](LICENSE).
