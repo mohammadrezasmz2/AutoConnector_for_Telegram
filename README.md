@@ -10,6 +10,8 @@ In other words: it's a scanner of Telegram channels and all sorts of subscriptio
 
 Platforms: Android, Windows, Linux, MacBook.
 
+> 🔒 **Is it safe?** See [SECURITY.md](SECURITY.md) — what the app does and does not do, and why it is not a threat to Telegram. &nbsp;·&nbsp; 🇮🇷 **Why it's tuned for Iran:** [docs/BUILT_FOR_IRAN.md](docs/BUILT_FOR_IRAN.md).
+
 The Android version works on its own, while on Windows you need to enable a proxying engine — "SPLIT..." or "COALESCING.." — in the settings, or via the button to the right of the words "Telegram connected" and the large gray/green circle. Or pick the one that works best for you personally, since blocking differs everywhere. The "COALESCING.." modes are a last resort — Telegram will start working, but sending/displaying media content in chats will break.
 
 I recommend disabling a firewall like COMODO if you use one: it puts the app into a sandbox, and its firewall ruins outgoing connections to MTProto proxies. Or run the app in a virtual machine — there the TCP stack changes completely, and AutoConnector's behavior will be different.
