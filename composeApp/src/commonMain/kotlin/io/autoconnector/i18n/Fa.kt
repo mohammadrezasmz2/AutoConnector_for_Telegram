@@ -497,6 +497,7 @@ object Fa : Strings {
     override val tabConnectorScan = "اتصال"
     override val batteryOptOn = "بهینه‌سازی باتری ممکن است برنامه را در پس‌زمینه متوقف کند"
     override val batteryFix = "رفع"
+    override val themeToggle = "تم روشن / تیره"
     override val aiTitle = "🧠 بهینه‌ساز هوشمند"
     override val aiRunNow = "بهینه‌سازی کن"
     override val aiExplain = "تنظیمات اتصال را روی پروکسی‌های واقعی تست می‌کند و بهترین را خودش اعمال می‌کند (هر یک ساعت و بعد از تغییر شبکه)؛ تایم‌اوت و تعداد مسابقه هم لحظه‌ای تنظیم می‌شوند."

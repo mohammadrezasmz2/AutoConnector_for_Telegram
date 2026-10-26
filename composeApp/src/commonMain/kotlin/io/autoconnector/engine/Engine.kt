@@ -698,6 +698,9 @@ interface Engine {
      *  a text file and opens the system share sheet (Android). */
     fun shareLogs() {}
 
+    /** Saves only the theme (1 = light, 2 = dark), leaving every other setting as is. */
+    fun setThemeMode(mode: Int) { updateSettings(settings.value.copy(themeMode = mode)) }
+
     /** Runs the AI optimizer now (tests settings on real proxies, applies the best). */
     fun runAiOptimize() {}
 

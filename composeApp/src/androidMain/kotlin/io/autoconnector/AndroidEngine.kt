@@ -1120,6 +1120,8 @@ class AndroidEngine(context: Context) : Engine {
         }
     }
 
+    @Volatile private var lastAiSeenAt = 0L
+
     private fun isBatteryOptimized(): Boolean = try {
         val pm = ctx.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager
         pm != null && !pm.isIgnoringBatteryOptimizations(ctx.packageName)
@@ -1130,7 +1132,13 @@ class AndroidEngine(context: Context) : Engine {
     override fun runAiOptimize() {
         scope.launch(Dispatchers.IO) {
             io.autoconnector.engine.check.AutoOptimizer.run(ctx) { RelayLog.emit(it) }
+            loadSettings()   // the optimizer may have changed the connection method
         }
+    }
+
+    override fun setThemeMode(mode: Int) {
+        Prefs(ctx).setThemeMode(mode)
+        loadSettings()
     }
 
     override fun requestBatteryExemption() {
@@ -1395,6 +1403,12 @@ class AndroidEngine(context: Context) : Engine {
             !bLastB -> "⚠ Telegram has not used port ${p.relayPortB()} yet"
             else -> null
         }
+
+        // The AI optimizer (also run hourly by the service) writes the connection
+        // method straight to Prefs — refresh the settings snapshot so a later
+        // settings save doesn't put the old value back.
+        val aiAt = io.autoconnector.engine.check.AutoOptimizer.lastRunAt()
+        if (aiAt != lastAiSeenAt) { lastAiSeenAt = aiAt; loadSettings() }
 
         _state.value = EngineState(
             proxyEnabled = proxyOn,

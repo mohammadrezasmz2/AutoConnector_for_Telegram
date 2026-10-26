@@ -421,6 +421,7 @@ interface Strings {
     val tabConnectorScan: String get() = "Connect"
     val batteryOptOn: String get() = "Battery optimization may pause the app in the background"
     val batteryFix: String get() = "Fix"
+    val themeToggle: String get() = "Light / dark theme"
     val aiTitle: String get() = "🧠 AI optimizer"
     val aiRunNow: String get() = "Optimize now"
     val aiExplain: String get() = "Tests connection settings on real proxies and applies the best one by itself (every hour and after a network change); timeouts and race width are tuned live."

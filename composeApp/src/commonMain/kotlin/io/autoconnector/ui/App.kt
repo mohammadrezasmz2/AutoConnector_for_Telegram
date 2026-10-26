@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -288,7 +290,12 @@ fun App(engine: Engine) {
                     // ✈ = one tap: add the relay (port A) to Telegram as its proxy.
                     TitleRow(settings.langCode, onOpenGuide = {
                         engine.openLink("tg://socks?server=127.0.0.1&port=${state.portA.takeIf { it > 0 } ?: 55001}")
-                    }, onOpenContact = { engine.openLink("https://t.me/Smz1313") }) { code ->
+                    }, onOpenContact = { engine.openLink("https://t.me/Smz1313") },
+                        dark = dark,
+                        // Explicit light/dark (never "auto"), so it stays the same
+                        // after restarts until the user switches it again.
+                        onToggleTheme = { engine.setThemeMode(if (dark) 1 else 2) },
+                    ) { code ->
                         engine.updateSettings(settings.copy(langCode = code))
                     }
                 }
@@ -376,6 +383,8 @@ private fun TitleRow(
     langCode: String,
     onOpenGuide: () -> Unit = {},
     onOpenContact: () -> Unit = {},
+    dark: Boolean = true,
+    onToggleTheme: () -> Unit = {},
     onPickLang: (String) -> Unit,
 ) {
     Row(
@@ -404,15 +413,6 @@ private fun TitleRow(
             )
         }
         Spacer(Modifier.weight(1f))
-        // One tap to the "set up ports 55001/55002 in Telegram" page.
-        IconButton(onClick = onOpenGuide, modifier = Modifier.size(33.dp)) {
-            Icon(
-                Icons.Filled.Send,
-                contentDescription = LocalStrings.current.setupTgPorts,
-                tint = AppColors.accent,
-                modifier = Modifier.size(22.dp),
-            )
-        }
         var expanded by remember { mutableStateOf(false) }
         // Flags + English + native, from the shared registry — same list as Settings.
         val langs = listOf("auto" to (LocalStrings.current.langAuto + "  🌐")) +
@@ -436,6 +436,24 @@ private fun TitleRow(
                     )
                 }
             }
+        }
+        // Light / dark theme switch — the choice is saved and kept until changed.
+        IconButton(onClick = onToggleTheme, modifier = Modifier.size(33.dp)) {
+            Icon(
+                if (dark) Icons.Filled.LightMode else Icons.Filled.DarkMode,
+                contentDescription = LocalStrings.current.themeToggle,
+                tint = AppColors.accent,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        // Quick setup: one tap adds the relay to Telegram as its proxy.
+        IconButton(onClick = onOpenGuide, modifier = Modifier.size(33.dp)) {
+            Icon(
+                Icons.Filled.Send,
+                contentDescription = LocalStrings.current.setupTgPorts,
+                tint = AppColors.accent,
+                modifier = Modifier.size(22.dp),
+            )
         }
     }
 }
