@@ -303,11 +303,6 @@ fun App(engine: Engine) {
                 if (!state.notificationsOk) item {
                     NotifLine(onInfo = { notifInfo = true }, onFix = { engine.requestNotifications() })
                 }
-                // Battery optimization pauses the app in the background (scan and
-                // relay stop until Telegram/the app is reopened) — offer the fix.
-                if (state.batteryOptimized && (state.proxyEnabled || state.scanEnabled)) item {
-                    BatteryLine(onFix = { engine.requestBatteryExemption() })
-                }
                 item { ToggleRow(state, engine) }
                 item { PoolLine(state) }
 
@@ -400,14 +395,16 @@ private fun TitleRow(
                 .clip(RoundedCornerShape(2.dp)),
         )
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f, fill = false)) {
+        // The name column takes ALL the free space (it used to share it with a
+        // spacer, which cut "AutoConnector" to "AutoConne…").
+        Column(Modifier.weight(1f)) {
             Text(
                 "AutoConnector",
                 fontWeight = FontWeight.Bold,
                 fontSize = 19.sp,
                 color = AppColors.onSurface,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                softWrap = false,
             )
             // Support contact — one tap opens a chat in Telegram.
             Text(
@@ -419,7 +416,6 @@ private fun TitleRow(
                 modifier = Modifier.clickable(onClick = onOpenContact).padding(vertical = 1.dp),
             )
         }
-        Spacer(Modifier.weight(1f))
         var expanded by remember { mutableStateOf(false) }
         // Flags + English + native, from the shared registry — same list as Settings.
         val langs = listOf("auto" to (LocalStrings.current.langAuto + "  🌐")) +
