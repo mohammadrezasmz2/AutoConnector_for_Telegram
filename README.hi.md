@@ -1,6 +1,6 @@
 [ENGLISH](README.en.md) · [AMHARIC](README.am.md) · [ARABIC](README.ar.md) · [AZERBAIJANI](README.az.md) · [BENGALI](README.bn.md) · [BURMESE](README.my.md) · [CHINESE](README.zh.md) · [DARI](README.prs.md) · [FRENCH](README.fr.md) · [GERMAN](README.de.md) · [HAUSA](README.ha.md) · [HINDI](README.hi.md) · [INDONESIAN](README.id.md) · [ITALIAN](README.it.md) · [JAPANESE](README.ja.md) · [KAZAKH](README.kk.md) · [KOREAN](README.ko.md) · [MARATHI](README.mr.md) · [PASHTO](README.ps.md) · [PERSIAN](README.fa.md) · [POLISH](README.pl.md) · [PORTUGUESE](README.pt.md) · [PUNJABI](README.pa.md) · [RUSSIAN](README.ru.md) · [SPANISH](README.es.md) · [TAMIL](README.ta.md) · [TELUGU](README.te.md) · [THAI](README.th.md) · [TIGRINYA](README.ti.md) · [TURKISH](README.tr.md) · [UKRAINIAN](README.uk.md) · [URDU](README.ur.md) · [UZBEK](README.uz.md) · [VIETNAMESE](README.vi.md)
 
-**[डाउनलोड (नवीनतम)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
+**[डाउनलोड (नवीनतम)](https://github.com/mohammadrezasmz2/AutoConnector_for_Telegram/raw/ci-apk/AutoConnector-latest.apk)**
 
 # AutoConnector for Telegram
 
@@ -96,7 +96,7 @@ Android संस्करण अपने-आप काम करता है,
 
 ## 📥 डाउनलोड
 
-सभी बिल्ड — रिलीज़ पृष्ठ पर: **[GitHub Releases (latest)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
+सभी बिल्ड — रिलीज़ पृष्ठ पर: **[GitHub Releases (latest)](https://github.com/mohammadrezasmz2/AutoConnector_for_Telegram/raw/ci-apk/AutoConnector-latest.apk)**
 
 | OS | फ़ाइल | चलाना |
 |----|------|--------|

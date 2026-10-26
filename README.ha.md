@@ -1,6 +1,6 @@
 [ENGLISH](README.en.md) · [AMHARIC](README.am.md) · [ARABIC](README.ar.md) · [AZERBAIJANI](README.az.md) · [BENGALI](README.bn.md) · [BURMESE](README.my.md) · [CHINESE](README.zh.md) · [DARI](README.prs.md) · [FRENCH](README.fr.md) · [GERMAN](README.de.md) · [HAUSA](README.ha.md) · [HINDI](README.hi.md) · [INDONESIAN](README.id.md) · [ITALIAN](README.it.md) · [JAPANESE](README.ja.md) · [KAZAKH](README.kk.md) · [KOREAN](README.ko.md) · [MARATHI](README.mr.md) · [PASHTO](README.ps.md) · [PERSIAN](README.fa.md) · [POLISH](README.pl.md) · [PORTUGUESE](README.pt.md) · [PUNJABI](README.pa.md) · [RUSSIAN](README.ru.md) · [SPANISH](README.es.md) · [TAMIL](README.ta.md) · [TELUGU](README.te.md) · [THAI](README.th.md) · [TIGRINYA](README.ti.md) · [TURKISH](README.tr.md) · [UKRAINIAN](README.uk.md) · [URDU](README.ur.md) · [UZBEK](README.uz.md) · [VIETNAMESE](README.vi.md)
 
-**[Sauke (na baya-bayan nan)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
+**[Sauke (na baya-bayan nan)](https://github.com/mohammadrezasmz2/AutoConnector_for_Telegram/raw/ci-apk/AutoConnector-latest.apk)**
 
 # AutoConnector for Telegram
 
@@ -97,7 +97,7 @@ Hakanan, taimaka wa Telegram ya canza tsakanin tashoshin 55001 da 55002 da hannu
 
 ## 📥 Sauke
 
-Duk builds suna a shafin releases: **[GitHub Releases (na baya-bayan nan)](https://github.com/cheburnetik/AutoConnector_for_Telegram/releases/latest)**
+Duk builds suna a shafin releases: **[GitHub Releases (na baya-bayan nan)](https://github.com/mohammadrezasmz2/AutoConnector_for_Telegram/raw/ci-apk/AutoConnector-latest.apk)**
 
 | OS | Fayil | Gudanarwa |
 |----|------|--------|
