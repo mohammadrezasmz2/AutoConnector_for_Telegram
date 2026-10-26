@@ -103,10 +103,9 @@ public final class PageScanner {
             "https://t.me/s/tgmtproxylol",
             "https://raw.githubusercontent.com/Argh94/Proxy-List/refs/heads/main/MTProto.txt",
             "https://raw.githubusercontent.com/LoneKingCode/free-proxy-db/refs/heads/main/proxies/all.txt",
-            "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no1.txt",
-            "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no2.txt",
-            "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no3.txt",
-            "https://raw.githubusercontent.com/V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB/refs/heads/main/telegram_proxy_no4.txt",
+            // V2RAYCONFIGSPOOL/TELEGRAM_PROXY_SUB removed: the files still download
+            // but their format changed and they now yield zero proxies (47 failed
+            // fetches / 0 usable in the 2026-10-27 log), only slowing every sweep.
             // GitHub raw lists added 2026-07 (verified live + real mtproto, dedup-checked)
             "https://raw.githubusercontent.com/MahsaNetConfigTopic/proxy/main/proxies.txt",
             "https://raw.githubusercontent.com/onlymeoneme/mtproto/refs/heads/main/all_proxies_list.txt",
@@ -129,7 +128,8 @@ public final class PageScanner {
             "https://raw.githubusercontent.com/LoneKingCode/free-proxy-db/refs/heads/main/proxies/mtproto.txt",
             "https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/proxy_ru.txt",
             "https://raw.githubusercontent.com/Surfboardv2ray/TGProto/refs/heads/main/proxies.txt",
-            "https://raw.githubusercontent.com/Yagami200/free-mtproto-proxies/refs/heads/main/proxies.txt",
+            // Yagami200/free-mtproto-proxies removed: 404 on nearly every fetch
+            // (1 ok / 17 failed in the 2026-10-27 log).
             "https://raw.githubusercontent.com/Telegram-FZ-LLC/Telegram-Proxy/refs/heads/main/proxies.txt",
             // Forum threads (paginated — last pages are walked automatically)
             "https://4pda.to/forum/index.php?showtopic=1119405&st=9999999",

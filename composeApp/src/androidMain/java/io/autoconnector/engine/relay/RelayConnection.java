@@ -656,6 +656,20 @@ public final class RelayConnection implements Runnable {
                 return s;
             }
         }
+        // Load spreading: when the active host is already carrying several parallel
+        // sockets, fan this one out to a proven reserve so the active host doesn't
+        // saturate (which was dropping ~40% of Telegram's parallel sockets with 0
+        // bytes). Falls back to the active host if the reserve doesn't answer fast.
+        ProxyEntry spread = manager.nextSpread();
+        if (spread != null && !(onlyFakeTls && !spread.isFakeTls())) {
+            UpstreamConnector.Channel s = trySerial(java.util.Collections.singletonList(spread),
+                    tag, dcId, dst, mode, exp, Math.min(connectTimeoutMs, 1500));
+            if (s != null) {
+                RelayLog.emit("⇄ spreading load → " + spread.host + ":" + spread.port
+                        + " (active busy)");
+                return s;
+            }
+        }
         UpstreamConnector.Channel a = tryActive(tag, dcId, dst, mode, exp, onlyFakeTls, connectTimeoutMs);
         if (a != null) return a;
         java.util.concurrent.locks.ReentrantLock lock = manager.electLock();

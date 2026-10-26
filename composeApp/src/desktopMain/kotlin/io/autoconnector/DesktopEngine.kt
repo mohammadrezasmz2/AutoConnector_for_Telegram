@@ -203,6 +203,7 @@ class DesktopEngine(private val dataDir: File) : Engine {
         scope.launch { mainsLoop() }
         scope.launch { probePauseWatcher() }
         scope.launch(Dispatchers.IO) { sourcesLoop() }
+        scope.launch(Dispatchers.IO) { covertLoop() }
         scope.launch(Dispatchers.IO) { autoRefreshOnce() }
         // Arm global hotkeys to whatever was last enabled (default: off).
         runCatching { hotkeys.apply(Prefs(ctx).hotkeysEnabled(), Prefs(ctx).hotkeyLetter()) }
@@ -1322,19 +1323,8 @@ class DesktopEngine(private val dataDir: File) : Engine {
      *  cadence shrinks sharply when few proxies are alive — "мало хостов →
      *  качать чаще" — and relaxes once the base is healthy. */
     private suspend fun sourcesLoop() {
-        // Private bootstrap channel — fetch once at start, then every iteration
-        // (self-throttled). Same encrypted source the Android build uses, so the
-        // desktop app also works where the public lists are blocked.
-        fun covertTick() {
-            try {
-                if (io.autoconnector.engine.scan.CovertBootstrap.configured())
-                    io.autoconnector.engine.scan.CovertBootstrap.refresh(store) { line -> appendLog(line, LogCat.SUBS) }
-            } catch (_: Throwable) {}
-        }
-        covertTick()
-        delay(40_000)  // let the first-start bootstrap go first
+        delay(40_000)  // let the first-start bootstrap (covertLoop) go first
         while (true) {
-            covertTick()
             try {
                 if (Prefs(ctx).scanEnabled() && store.enabledSourceUrls().isNotEmpty())
                     refreshAllSources()
@@ -1342,6 +1332,22 @@ class DesktopEngine(private val dataDir: File) : Engine {
             var slept = 0L
             val target = sourcesInterval()
             while (slept < target) { delay(2000); slept += 2000 }
+        }
+    }
+
+    /** Private bootstrap channel on its OWN cadence — independent of the source
+     *  sweep. A full sweep can take many minutes on a bad network, and when the
+     *  covert fetch was folded into that loop it only refreshed once per sweep.
+     *  Here it runs every ~90 s (self-throttled inside CovertBootstrap), so the
+     *  intranet-reachable site keeps topping up the pool no matter how long a
+     *  sweep is taking. Same encrypted source the Android build uses. */
+    private suspend fun covertLoop() {
+        while (true) {
+            try {
+                if (io.autoconnector.engine.scan.CovertBootstrap.configured())
+                    io.autoconnector.engine.scan.CovertBootstrap.refresh(store) { line -> appendLog(line, LogCat.SUBS) }
+            } catch (_: Throwable) {}
+            delay(90_000)
         }
     }
 

@@ -316,6 +316,36 @@ public final class RelayManager {
         return null;
     }
 
+    // --- Load spreading --------------------------------------------------------
+    // A log showed 40% of sessions closing with ↓0 B: Telegram opens many parallel
+    // sockets and session affinity forced ALL of them onto the single active host,
+    // which saturated and let Telegram drop the extras. When the active host is
+    // already carrying several concurrent sockets, hand some NEW sockets to a
+    // proven reserve instead (round-robin), so the parallel load is split across a
+    // few good proxies. The socket still falls back to the active host if the
+    // reserve doesn't answer, so this never costs a connection.
+    private static final int SPREAD_WHEN_CONNS = 3;   // active this busy → start spreading
+    private final java.util.concurrent.atomic.AtomicInteger spreadTick =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+    /** A reserve to offload this new socket onto, or null to use the active host. */
+    public ProxyEntry nextSpread() {
+        ProxyEntry act = active;
+        if (act == null || pinned != null || !AutoTuner.isEnabled()) return null;
+        if (System.currentTimeMillis() - activeSince < 15_000L) return null;
+        List<ProxyEntry> res = reserves;
+        if (res.isEmpty()) return null;
+        // How many sockets is the active host currently carrying?
+        int onActive = 0;
+        for (RelayStats.LiveConn c : RelayStats.liveConnections()) {
+            if (c.upstreamProxyId == act.id) onActive++;
+        }
+        if (onActive < SPREAD_WHEN_CONNS) return null;   // not busy — keep affinity
+        // Round-robin across the proven reserves so the extra sockets fan out.
+        ProxyEntry r = res.get(Math.floorMod(spreadTick.getAndIncrement(), res.size()));
+        return (r != null && r.id != act.id) ? r : null;
+    }
+
     /** Switches to a reserve that is clearly faster than the active host. */
     public void considerUpgrade(long now) {
         ProxyEntry act = active;
@@ -329,12 +359,16 @@ public final class RelayManager {
         for (ProxyEntry r : reserves) {
             SpeedBoard.Stat s = SpeedBoard.get(r.id, mode);
             if (s == null || s.samples <= 0) continue;
-            // Proven: a sustained sample this session, or several samples lately.
+            // Proven: a sustained sample this session, or a recent measurement.
+            // (Loosened — one fresh sample in the last 20 min now counts, so a
+            // genuinely faster reserve actually gets promoted instead of the relay
+            // sitting on a slower host forever.)
             boolean proven = (s.lastSampleAt > 0 && now - s.lastSampleAt < 45 * 60_000L)
-                    || (s.samples >= 2 && now - s.lastAt < 45 * 60_000L);
+                    || (s.samples >= 2 && now - s.lastAt < 45 * 60_000L)
+                    || (s.samples >= 1 && now - s.lastAt < 20 * 60_000L);
             if (!proven) continue;
             double er = s.effective(now);
-            if (er < Math.max(ea * 1.25, ea + 30)) continue;
+            if (er < Math.max(ea * 1.18, ea + 25)) continue;
             lastUpgradeAt = now;
             setActive(r, "faster: " + AutoTuner.fmtKbps(er) + " vs " + AutoTuner.fmtKbps(ea)
                     + " — previous host kept in reserve");

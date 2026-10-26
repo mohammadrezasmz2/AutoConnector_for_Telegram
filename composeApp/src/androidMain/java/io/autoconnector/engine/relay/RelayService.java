@@ -277,13 +277,16 @@ public final class RelayService extends Service {
     }
 
     private void maybeRefillPool() {
-        if (subsRunning) return;
         if (!new Prefs(this).scanEnabled()) return;
         ProxyStore store = ProxyStore.get(this);
-        // Private bootstrap channel — self-throttled, off the service thread, and
-        // silent on failure. Runs on every tick so a device that can only reach
-        // the intranet keeps getting a fresh pool even when the usual sources are
-        // blocked. No-op until it has been configured (tools/club_bootstrap.py).
+        // Private bootstrap channel — self-throttled (90 s inside CovertBootstrap),
+        // off the service thread, and silent on failure. It runs on EVERY tick and
+        // BEFORE the subsRunning guard below, on purpose: a full source sweep can
+        // take many minutes on a bad network (dozens of dead sources × retries),
+        // and the old code returned at `if (subsRunning) return;` the whole time,
+        // so the cloud channel only ever refreshed once per sweep. Keeping it here
+        // means the intranet-reachable site keeps topping up the pool every ~90 s
+        // regardless of what the subscription sweep is doing.
         if (io.autoconnector.engine.scan.CovertBootstrap.configured()) {
             new Thread(() -> {
                 try {
@@ -292,6 +295,7 @@ public final class RelayService extends Service {
                 } catch (Throwable ignored) {}
             }, "cb").start();
         }
+        if (subsRunning) return;
         int total = store.count();
         int alive = store.aliveCount();
         long now = System.currentTimeMillis();
