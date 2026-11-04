@@ -486,6 +486,14 @@ interface Strings {
     fun autoTuneNow(s: String): String = "Now: $s"
     val autoTuneWaiting: String get() = "Now: collecting measurements… (use Telegram for a minute)"
     val autoTuneManaged: String get() = "Smart auto-tune is ON — these values are chosen automatically; your settings below are the fallback."
+    val autoStartLabel: String get() = "Auto-start when Telegram needs it"
+    val autoStartInfo: String get() =
+        "When ON, the relay starts on its own after you reboot or update the phone, so you don't have to open this app " +
+        "first — just open Telegram and it connects through the saved proxies automatically.\n\n" +
+        "It uses the proxies it already found and tested last time (nothing is searched from scratch), so the connection " +
+        "comes up fast. This is meant for when you are NOT using a VPN — if a VPN is on, Telegram already works through it " +
+        "and you can leave this off.\n\n" +
+        "Note: if you force-close this app from Recents, Android won't let it restart until you open it once."
     val tgFirstLabel: String get() = "Telegram first (slow scanning while Telegram downloads)"
     val tgFirstInfo: String get() =
         "Background scanning opens dozens of connections and downloads subscription lists. On a phone that competes " +

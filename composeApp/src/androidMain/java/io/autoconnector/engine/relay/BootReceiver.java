@@ -17,6 +17,15 @@ public class BootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
                 || "android.intent.action.LOCKED_BOOT_COMPLETED".equals(action)) {
+            // Opt-in only: the user enables "Auto-start when Telegram needs it" in
+            // Settings. When off, we never start on boot — the user opens the app
+            // themselves. When on, the relay comes up automatically so opening
+            // Telegram just works, using the proxies saved from last time.
+            try {
+                if (!new io.autoconnector.engine.core.Prefs(ctx).autoStartOnTelegram()) return;
+            } catch (Throwable ignored) {
+                return;
+            }
             try {
                 RelayService.start(ctx);
             } catch (Exception ignored) {

@@ -101,12 +101,49 @@ public final class RelayManager {
         }
         INSTANCE = this;
         SpeedBoard.init(store);
+        seedActiveFromSavedReserve(net);
         initDcResolver(appContext);
         applyTuningPrefs(appContext);
         prewarm = new PrewarmPool(store, appContext);
         prewarm.start();
         watchdog = new StallWatchdog(this, store);
         watchdog.start();
+    }
+
+    /**
+     * Restores the fastest proven host from the last session as the active
+     * upstream, so the VERY FIRST Telegram connection lands on a known-good
+     * reserve instead of re-racing from scratch every launch. Speeds persist in
+     * the {@code proxy_speed} table and were just loaded by {@link SpeedBoard#init};
+     * here we pick the quickest one measured on THIS network and pin it as active.
+     * Background scouting / {@link #considerUpgrade} still switches to anything
+     * faster it measures afterward — so the saved reserve is used "for now", and a
+     * better proxy takes over later, exactly as intended.
+     */
+    private void seedActiveFromSavedReserve(io.autoconnector.engine.core.NetworkMode net) {
+        try {
+            String m = (net != null ? net : io.autoconnector.engine.core.NetworkMode.UNKNOWN).code;
+            long now = System.currentTimeMillis();
+            long bestId = 0; double bestKbps = 0;
+            for (SpeedBoard.Stat st : SpeedBoard.snapshot()) {
+                if (st == null || st.proxyId <= 0 || st.samples <= 0) continue;
+                if (!m.equals(st.mode)) continue;
+                double e = st.effective(now);
+                if (e > bestKbps) { bestKbps = e; bestId = st.proxyId; }
+            }
+            if (bestId == 0 || bestKbps <= 0) return;
+            java.util.Set<Long> cooled;
+            try { cooled = store.cooledAmong(java.util.Collections.singletonList(bestId)); }
+            catch (Throwable ignored) { cooled = java.util.Collections.emptySet(); }
+            if (cooled.contains(bestId)) return;        // on cooldown / recently failed
+            java.util.List<ProxyEntry> one = store.proxiesByIds(java.util.Collections.singletonList(bestId));
+            if (one == null || one.isEmpty()) return;
+            ProxyEntry best = one.get(0);
+            setActive(best, "restored from last session — fastest saved reserve: "
+                    + AutoTuner.fmtKbps(bestKbps));
+            upstreamA.set(best);
+            upstreamB.set(best);
+        } catch (Throwable ignored) {}
     }
 
     /** Wires the DC resolver to Prefs (learned DC map) and the relay log. */

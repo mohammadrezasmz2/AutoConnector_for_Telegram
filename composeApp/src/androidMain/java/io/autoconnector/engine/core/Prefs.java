@@ -559,6 +559,11 @@ public class Prefs {
     public boolean autoTune() { return sp.getBoolean("auto_tune", true); }
     public void setAutoTune(boolean v) { sp.edit().putBoolean("auto_tune", v).apply(); }
 
+    /** Opt-in: start the relay automatically (on boot / app replace) so opening
+     *  Telegram just works without launching this app first. Default off. */
+    public boolean autoStartOnTelegram() { return sp.getBoolean("autostart_telegram", false); }
+    public void setAutoStartOnTelegram(boolean v) { sp.edit().putBoolean("autostart_telegram", v).apply(); }
+
     /** "Telegram first": throttle scanning while Telegram is downloading. */
     public boolean tgFirstScan() { return sp.getBoolean("tg_first_scan", true); }
     public void setTgFirstScan(boolean v) { sp.edit().putBoolean("tg_first_scan", v).apply(); }

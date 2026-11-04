@@ -257,6 +257,9 @@ data class EngineSettings(
     val autoTune: Boolean = true,
     // «Telegram first»: slow scanning down while Telegram is downloading.
     val tgFirstScan: Boolean = true,
+    // Opt-in: auto-start the relay (on boot / app update) so opening Telegram
+    // just works without launching this app first. Default off.
+    val autoStartOnTelegram: Boolean = false,
 )
 
 /** One past attempt against a host, for the detail card's history list. */

@@ -249,6 +249,7 @@ class AndroidEngine(context: Context) : Engine {
             stallGuard = p.stallGuard(),
             autoTune = p.autoTune(),
             tgFirstScan = p.tgFirstScan(),
+            autoStartOnTelegram = p.autoStartOnTelegram(),
         )
     }
 
@@ -305,6 +306,7 @@ class AndroidEngine(context: Context) : Engine {
         p.setStallGuard(s.stallGuard)
         p.setAutoTune(s.autoTune)
         p.setTgFirstScan(s.tgFirstScan)
+        p.setAutoStartOnTelegram(s.autoStartOnTelegram)
         RelayManager.applyTuningPrefs(ctx)
         NetLog.setEnabled(s.netLogEnabled)
         // Re-apply the override only when the mode picker actually changed, so a

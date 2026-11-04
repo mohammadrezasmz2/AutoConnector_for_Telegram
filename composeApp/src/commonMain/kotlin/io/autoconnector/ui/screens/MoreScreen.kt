@@ -375,6 +375,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
     var stallGuard by remember { mutableStateOf(s.stallGuard) }
     var autoTune by remember { mutableStateOf(s.autoTune) }
     var tgFirst by remember { mutableStateOf(s.tgFirstScan) }
+    var autoStartTg by remember { mutableStateOf(s.autoStartOnTelegram) }
     var expEngine by remember { mutableStateOf(s.expEngineMode) }
     var connEngine by remember { mutableStateOf(s.relayConnectMode) }
     var raceWidth by remember { mutableStateOf(s.relayRaceWidth) }
@@ -436,6 +437,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
                 stallGuard = stallGuard,
                 autoTune = autoTune,
                 tgFirstScan = tgFirst,
+                autoStartOnTelegram = autoStartTg,
                 expEngineMode = expEngine,
                 netLogEnabled = netLog,
                 relayConnectMode = connEngine,
@@ -515,6 +517,7 @@ private fun SettingsPage(cb: MoreCallbacks) {
             )
         }
         SwitchRow(t.tgFirstLabel, tgFirst, t.tgFirstInfo) { tgFirst = it; save() }
+        SwitchRow(t.autoStartLabel, autoStartTg, t.autoStartInfo) { autoStartTg = it; save() }
 
         Section(t.relayPorts) { help = t.relayPorts to t.relayPortsHelp }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
