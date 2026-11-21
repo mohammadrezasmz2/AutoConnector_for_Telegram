@@ -151,8 +151,10 @@ def build(proxies, results, rounds, top):
             "ok": len(ok), "tries": len(samples),
             "tg": f"tg://proxy?{q}", "tme": f"https://t.me/proxy?{q}",
         })
-    # stable first (answered every round), then fastest; FakeTLS wins ties
-    live.sort(key=lambda p: (-p["ok"] / max(p["tries"], 1), p["ms"], p["type"] != "faketls"))
+    # FakeTLS first (plain/dd MTProto is usually caught by DPI in Iran), then
+    # stable (answered every round), then fastest
+    rank = {"faketls": 0, "secure": 1, "classic": 2}
+    live.sort(key=lambda p: (rank[p["type"]], -p["ok"] / max(p["tries"], 1), p["ms"]))
     # several secrets often share one host:port — keep the list diverse
     per_ep, ranked = {}, []
     for p in live:

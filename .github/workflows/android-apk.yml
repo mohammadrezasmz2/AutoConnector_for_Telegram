@@ -15,6 +15,10 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+    # the proxy web page is not part of the app — don't cut a release for it
+    paths-ignore:
+      - 'web/**'
+      - '.github/workflows/proxy-site.yml'
   workflow_dispatch:
 
 permissions:

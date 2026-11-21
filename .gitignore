@@ -43,3 +43,5 @@ hs_err_pid*.log
 # covert bootstrap private key (never commit)
 tools/club_key.bin
 tools/club_config.json
+
+__pycache__/
