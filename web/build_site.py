@@ -103,6 +103,85 @@ def collect(sources):
     return proxies
 
 
+# ----------------------------------------------------------------- safety --
+IRAN_LISTS = [
+    "https://raw.githubusercontent.com/ipverse/rir-ip/master/country/ir/ipv4-aggregated.txt",
+    "https://www.ipdeny.com/ipblocks/data/aggregated/ir-aggregated.zone",
+]
+
+
+def load_iran_nets():
+    """Iranian IPv4 ranges (RIR delegations). Refuses to continue without them."""
+    import bisect, ipaddress
+    nets = set()
+    for url in IRAN_LISTS:
+        for line in fetch(url).splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                try:
+                    nets.add(ipaddress.ip_network(line, strict=False))
+                except ValueError:
+                    pass
+    if len(nets) < 500:
+        sys.exit(f"Iran IP list unavailable ({len(nets)} ranges) — keeping the previous page")
+    spans = sorted((int(n.network_address), int(n.broadcast_address)) for n in nets if n.version == 4)
+    starts = [a for a, _ in spans]
+
+    def is_iran(ip):
+        x = int(ip)
+        i = bisect.bisect_right(starts, x) - 1
+        return i >= 0 and spans[i][0] <= x <= spans[i][1]
+    print(f"Iran ranges loaded: {len(spans)}", file=sys.stderr)
+    return is_iran
+
+
+async def resolve_all(hosts, concurrency=100, timeout=6.0):
+    """host -> list of IPv4/IPv6 addresses (empty if it does not resolve)."""
+    import ipaddress, socket
+    loop, sem, out = asyncio.get_running_loop(), asyncio.Semaphore(concurrency), {}
+
+    async def one(h):
+        try:
+            out[h] = [ipaddress.ip_address(h)]
+            return
+        except ValueError:
+            pass
+        async with sem:
+            try:
+                infos = await asyncio.wait_for(loop.getaddrinfo(h, 443, type=socket.SOCK_STREAM), timeout)
+                out[h] = list({ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos})
+            except Exception:
+                out[h] = []
+    await asyncio.gather(*(one(h) for h in hosts))
+    return out
+
+
+def safety_filter(proxies):
+    """Drop proxies whose server is inside Iran, private/reserved, or unresolvable.
+    Message content is encrypted by Telegram (MTProto) end to end between the
+    app and Telegram's servers, so no proxy can read it; what a proxy CAN see is
+    the user's IP, timing and traffic volume. A server inside Iran keeps those
+    records inside Iran, so such servers are removed."""
+    is_iran = load_iran_nets()
+    hosts = list(dict.fromkeys(h for h, _, _ in proxies))
+    print(f"resolving {len(hosts)} hosts…", file=sys.stderr)
+    addrs = asyncio.run(resolve_all(hosts))
+    kept, why = [], {"iran": 0, "private": 0, "unresolved": 0}
+    for p in proxies:
+        ips = addrs.get(p[0]) or []
+        if not ips:
+            why["unresolved"] += 1
+        elif any(not ip.is_global for ip in ips):
+            why["private"] += 1
+        elif any(ip.version == 4 and is_iran(ip) for ip in ips):
+            why["iran"] += 1
+        else:
+            kept.append(p)
+    print(f"safety filter: kept {len(kept)}, removed iran={why['iran']} "
+          f"private={why['private']} unresolved={why['unresolved']}", file=sys.stderr)
+    return kept, why
+
+
 # ------------------------------------------------------------------ check --
 async def check_all(proxies, rounds, timeout, concurrency):
     """Real MTProto handshake (resPQ from Telegram DC 2) for every proxy.
@@ -183,10 +262,14 @@ def main():
                 if l.strip() and not l.lstrip().startswith("#")]
         print(f"fetching {len(srcs)} sources…", file=sys.stderr)
         proxies = collect(srcs)
-    print(f"collected {len(proxies)} unique proxies", file=sys.stderr)
+    collected = len(proxies)
+    print(f"collected {collected} unique proxies", file=sys.stderr)
     if len(proxies) < 5:
         sys.exit("too few proxies collected — keeping the previous page")
 
+    proxies, removed = safety_filter(proxies)
+    if len(proxies) < 5:
+        sys.exit("too few proxies left after the safety filter — keeping the previous page")
     print(f"handshake-checking {len(proxies)} proxies…", file=sys.stderr)
     results = asyncio.run(check_all(proxies, a.rounds, a.timeout, a.concurrency))
     ranked, live = build(proxies, results, a.rounds, a.top)
@@ -196,8 +279,9 @@ def main():
 
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    meta = {"updated": int(time.time()), "collected": len(proxies),
-            "live": len(live), "proxies": ranked}
+    meta = {"updated": int(time.time()), "collected": collected,
+            "checked": len(proxies), "live": len(live),
+            "removed": removed, "proxies": ranked}
     (out / "proxies.json").write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")))
     (out / "proxies.txt").write_text("\n".join(p["tg"] for p in live) + "\n")
     shutil.copy(HERE / "index.html", out / "index.html")
