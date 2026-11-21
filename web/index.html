@@ -46,7 +46,7 @@
   .diag.warn{border-inline-start-color:var(--mid)}.diag.bad{border-inline-start-color:var(--bad)}.diag.good{border-inline-start-color:var(--ok)}
   .chartbox{margin-top:10px}
   .chartlbl{font-size:12px;color:var(--mute);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  canvas#chart{width:100%;height:120px;display:block;background:#000;border:1px solid var(--line);border-radius:4px}
+  canvas#chart{width:100%;height:166px;display:block;background:var(--plot);border:1px solid var(--line);border-radius:4px}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .row button{font-size:13px;padding:7px 12px}
   .sec li{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;margin:6px 0}
@@ -366,6 +366,7 @@
     $("#help").innerHTML = t("help").map(h => `<li>${h}</li>`).join("");
     for (const id in UI) $("#" + id).innerHTML = UI[id]();
     renderSec(); render(); diagnose(); draw();
+    if (!$("#monStop").disabled) $("#monStop").textContent=t("monitorInternet");
   }
   $("#lang").onclick = () => { lang = lang === "fa" ? "en" : "fa"; try { localStorage.setItem("ac_lang", lang); } catch (e) {} applyLang(); log("info", `language: ${lang}`); };
 
@@ -430,7 +431,7 @@
     const timer = setTimeout(() => ctl.abort(), timeout);
     let state = "reply";
     try { await fetch(url, { mode: "no-cors", cache: "no-store", signal: ctl.signal }); }
-    catch (e) { if (ctl.signal.aborted) state = "timeout"; }
+    catch (e) { state = ctl.signal.aborted ? "timeout" : "reset"; }
     clearTimeout(timer);
     const ms = Math.round(performance.now() - t0);
     if (state === "reply" && ms < 8) state = "reset";
@@ -534,47 +535,70 @@
   let samples = [], monTimer = null, monGen = 0;
   function stats() {
     const okv = samples.filter(x => x.ok).map(x => x.ms);
-    const avg = okv.length ? Math.round(okv.reduce((a, b) => a + b, 0) / okv.length) : null;
+    const avg = okv.length ? Math.round(okv.reduce((a,b) => a+b,0) / okv.length) : null;
     let jit = null;
-    if (okv.length > 1) { let d = 0; for (let i = 1; i < okv.length; i++) d += Math.abs(okv[i] - okv[i - 1]); jit = Math.round(d / (okv.length - 1)); }
-    return { n: samples.length, ok: okv.length, avg, jit, min: okv.length ? Math.min(...okv) : null, max: okv.length ? Math.max(...okv) : null };
+    if (okv.length > 1) {
+      let d=0; for (let i=1;i<okv.length;i++) d += Math.abs(okv[i]-okv[i-1]);
+      jit = Math.round(d/(okv.length-1));
+    }
+    return {n:samples.length,ok:okv.length,avg,jit,
+      min:okv.length ? Math.min(...okv) : null,max:okv.length ? Math.max(...okv) : null};
   }
-  function watch(p, quiet) {
-    if (BAD.has(p.port)) { log("warn", `${key(p)}: browsers can't probe port ${p.port}`); return; }
-    if (mon && pid(mon) === pid(p) && monTimer) return;
-    mon = p; samples = []; const gen = ++monGen;
-    clearTimeout(monTimer);
-    $("#monStop").disabled = false; $("#liveDot").classList.add("live");
-    bind("tMon", () => `<bdi>${mon.host}</bdi>`); bind("tMonS", () => mon.type);
-    bind("tLoss", () => "—"); bind("tLossS", () => "");
-    if (!quiet) log("info", `live watch started: ${key(p)}`);
-    render(); draw();
-    const tick = async () => {
-      if (gen !== monGen) return;
-      const r = await probeUrl(proxyUrl(p), 3000);
-      if (gen !== monGen) return;
-      const ok = r.state === "reply";
-      samples.push({ ok, ms: r.ms });
-      if (samples.length > 90) samples.shift();
-      const s = stats(), loss = Math.round(100 * (s.n - s.ok) / s.n);
-      bind("tMon", () => ok ? span(cls(r.ms), `${r.ms} ms`) : span("r", t("st")[r.state]));
-      bind("tMonS", () => `${key(p)} · min ${s.min ?? "-"} / max ${s.max ?? "-"}`);
-      bind("tLoss", () => span(loss === 0 ? "g" : loss < 20 ? "y" : "r", t("loss")(nf(loss))));
-      bind("tLossS", () => t("lossS")(s.jit ?? "-", nf(s.ok), nf(s.n)));
-      if (!ok) log("warn", `watch ${key(p)}: ${r.state} after ${r.ms}ms`);
-      else if (s.n % 15 === 0) log("info", `watch ${key(p)}: avg ${s.avg}ms jitter ${s.jit}ms loss ${loss}% (${s.n} samples)`);
+  function watch(p=null, quiet=false, force=false) {
+    if (p && BAD.has(p.port)) {
+      log("warn", key(p)+": browser cannot probe this port; showing internet ping instead");
+      p = null;
+    }
+    if (!force && monTimer && ((p===null && mon===null) || (p && mon && pid(p)===pid(mon)))) return;
+    mon=p; samples=[]; const gen=++monGen;
+    clearTimeout(monTimer); monTimer=null;
+    $("#monStop").disabled=false;
+    $("#liveDot").classList.toggle("live", !document.hidden && navigator.onLine);
+    bind("tMon",()=> p ? key(p) : t("internetWatch"));
+    bind("tMonS",()=> p ? p.type : "2s");
+    bind("tLoss",()=> "—");
+    bind("tLossS",()=> "");
+    $("#monStop").textContent=t("monitorInternet");
+    if (!quiet) log("info",p ? "watching browser HTTPS reachability: "+key(p) : "watching internet ping continuously");
+    render();draw();
+    const tick=async()=>{
+      if(gen!==monGen || document.hidden) return;
+      const target=p ? proxyUrl(p) : "https://speed.cloudflare.com/__down?bytes=0&_="+Math.random();
+      const r=await probeUrl(target,3000);
+      if(gen!==monGen || document.hidden) return;
+      const ok=r.state==="reply";
+      samples.push({ok,ms:r.ms});
+      if(samples.length>90) samples.shift();
+      const st=stats(),loss=Math.round(100*(st.n-st.ok)/st.n);
+      const status=ok ? span(cls(r.ms),r.ms+" ms") : span("r",t("st")[r.state]);
+      bind("tMon",()=>status);
+      bind("tMonS",()=> (p ? key(p) : t("internetWatch"))+" · min "+(st.min??"-")+" / max "+(st.max??"-"));
+      bind("tLoss",()=>span(loss===0?"g":loss<20?"y":"r",t("loss")(nf(loss))));
+      bind("tLossS",()=>t("lossS")(st.jit??"-",nf(st.ok),nf(st.n)));
+      if(!p){
+        bind("tPing",()=>status);
+        bind("tPingS",()=> "min "+(st.min??"-")+" / max "+(st.max??"-")+" ms");
+      }
+      $("#liveDot").classList.toggle("live",ok);
+      if(!ok && st.n%10===0) log("warn","watch "+(p?key(p):"internet")+": "+r.state);
       draw();
-      monTimer = setTimeout(tick, 2000);
+      monTimer=setTimeout(tick,2000);
     };
-    tick();
+    if(!document.hidden) tick();
   }
-  $("#monStop").onclick = () => {
-    monGen++; clearTimeout(monTimer); monTimer = null;
-    $("#monStop").disabled = true; $("#liveDot").classList.remove("live");
-    if (mon) log("info", `live watch stopped: ${key(mon)}`);
-  };
+  $("#monStop").onclick=()=>watch(null,false,true);
+  document.addEventListener("visibilitychange",()=>{
+    if(document.hidden){
+      ++monGen;clearTimeout(monTimer);monTimer=null;
+      $("#liveDot").classList.remove("live");
+    }else{
+      watch(mon,true,true);
+      refreshCatalog();
+      minuteMonitor();
+    }
+  });
 
-  function draw() {
+    function draw() {
     const c = $("#chart"), dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
     if (!W) return;
     c.width = W * dpr; c.height = H * dpr;
@@ -582,16 +606,18 @@
     const okv = samples.filter(s => s.ok).map(s => s.ms);
     const top = Math.max(300, ...okv) * 1.15, pad = 16, L = 44, n = 90, dx = (W - L - pad) / (n - 1);
     g.font = "10px ui-monospace,monospace"; g.direction = "ltr"; g.textAlign = "left"; g.lineWidth = 1;
-    g.strokeStyle = "rgba(255,255,255,.06)";
+    const style = getComputedStyle(document.documentElement);
+    g.strokeStyle = style.getPropertyValue("--plot-grid").trim() || "rgba(255,255,255,.08)";
     for (let x = L; x <= W - pad; x += 24) { g.beginPath(); g.moveTo(x, pad); g.lineTo(x, H - pad); g.stroke(); }
-    g.strokeStyle = "rgba(255,255,255,.16)"; g.fillStyle = "#8d8d8d";
+    g.strokeStyle = style.getPropertyValue("--plot-axis").trim(); g.fillStyle = style.getPropertyValue("--mute").trim();
     for (const v of [0, top / 2, top]) {
       const y = H - pad - (v / top) * (H - 2 * pad);
       g.beginPath(); g.moveTo(L, y); g.lineTo(W - pad, y); g.stroke();
       g.fillText(Math.round(v) + "ms", 4, y + 3);
     }
     const x0 = W - pad - (samples.length - 1) * dx;
-    g.strokeStyle = "#fff"; g.lineWidth = 2; g.shadowColor = "#fff"; g.shadowBlur = 8; g.beginPath();
+    const trace = style.getPropertyValue("--plot-trace").trim();
+    g.strokeStyle = trace; g.lineWidth = 2.4; g.shadowColor = trace; g.shadowBlur = 11; g.beginPath();
     let pen = false;
     samples.forEach((s, i) => {
       if (!s.ok) { pen = false; return; }
@@ -599,10 +625,15 @@
       pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true;
     });
     g.stroke(); g.shadowBlur = 0;
-    g.fillStyle = "#ff4d5e";
+    const last = samples[samples.length-1];
+    if (last && last.ok) {
+      const yy=H-pad-(last.ms/top)*(H-2*pad);
+      g.fillStyle=trace; g.shadowColor=trace; g.shadowBlur=14; g.beginPath();g.arc(W-pad,yy,4,0,Math.PI*2);g.fill();g.shadowBlur=0;
+    }
+    g.fillStyle = style.getPropertyValue("--bad").trim();
     samples.forEach((s, i) => { if (!s.ok) { g.beginPath(); g.arc(x0 + i * dx, pad, 3, 0, 7); g.fill(); } });
     const lbl = $("#chartLbl"); lbl.textContent = t("chart") + (mon ? " · " : "");
-    if (mon) { const b = document.createElement("bdi"); b.textContent = key(mon); lbl.append(b); }
+    { const b = document.createElement("bdi"); b.textContent = mon ? key(mon) : t("internetWatch"); lbl.append(b); }
   }
   window.addEventListener("resize", draw);
 
@@ -791,7 +822,7 @@
     .catch(e => { bind("sub", () => t("loadFail")); log("err", `list load failed: ${e.message}`); });
 
   checkTelegram();
-  pingInternet();
+  watch(null,true);
 })();
 </script>
 </body>
