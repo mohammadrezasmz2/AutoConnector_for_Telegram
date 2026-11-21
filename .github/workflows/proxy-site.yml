@@ -45,12 +45,12 @@ jobs:
           python3 - <<'PY'
           import pathlib, re, sys
           page = pathlib.Path("web/index.html").read_text(encoding="utf-8")
-          scripts = re.findall(r"<script(?:\\s[^>]*)?>([\\s\\S]*?)</script>", page, re.I)
+          scripts = re.findall(r"<script(?:\s[^>]*)?>([\s\S]*?)</script>", page, re.I)
           if len(scripts) != 1:
               sys.exit(f"Expected one inline application script, got {len(scripts)}")
           script = scripts[0]
-          ids = set(re.findall(r'\\bid=["\\']([^"\\']+)["\\']', page))
-          refs = set(re.findall(r'\\$\\(\\s*["\\']#([A-Za-z0-9_-]+)["\\']\\s*\\)', script))
+          ids = set(re.findall(r'\bid=["\']([^"\']+)["\']', page))
+          refs = set(re.findall(r'\$\(\s*["\']#([A-Za-z0-9_-]+)["\']\s*\)', script))
           missing = sorted(refs - ids)
           if missing:
               sys.exit("Undeclared DOM ids used by JS: " + ", ".join(missing))
