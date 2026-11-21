@@ -62,10 +62,46 @@ jobs:
           PY
           node --check /tmp/ac-site-check.js
 
-      - name: Collect, check and rank proxies
+      - name: Install and regression-test MTProto quality ranking
         run: |
           pip install --quiet cryptography
-          python3 web/build_site.py --out site --top 300
+          python3 -m unittest discover -s web -p 'test_proxy_rank.py' -v
+
+      # Each workflow run stores a new cache key, then the following run
+      # restores the newest matching entry. Failed/incomplete runs do not
+      # erase the last successful history.
+      - name: Restore MTProto history
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/proxy-health.json
+          key: proxy-health-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            proxy-health-
+
+      - name: Collect, check and rank proxies
+        run: |
+          python3 web/build_site.py --out site --top 300 --history .cache/proxy-health.json
+
+      - name: Validate published MTProto scores
+        run: |
+          python3 - <<'PY'
+          import json, math
+          data = json.load(open('site/proxies.json', encoding='utf-8'))
+          items = data['proxies']
+          assert items, 'no verified proxies'
+          for p in items:
+              assert p['ok'] >= 1 and p['tries'] >= p['ok'], 'invalid handshake counters'
+              assert p['ms'] >= 0 and math.isfinite(p['score']), 'invalid proxy score'
+              assert 0 <= p['stability'] <= 100, 'invalid reliability value'
+          assert all(a['score'] <= b['score'] for a,b in zip(items,items[1:])), 'catalog is not ranked'
+          print('Verified ranked MTProto catalog:', len(items), 'proxies')
+          PY
+
+      - name: Save MTProto history for next scan
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/proxy-health.json
+          key: proxy-health-${{ github.run_id }}-${{ github.run_attempt }}
 
       - uses: actions/configure-pages@v5
 
