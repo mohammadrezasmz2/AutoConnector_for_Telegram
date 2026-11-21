@@ -365,7 +365,7 @@
     $("#lang").textContent = lang === "fa" ? "EN" : "فا";
     $("#help").innerHTML = t("help").map(h => `<li>${h}</li>`).join("");
     for (const id in UI) $("#" + id).innerHTML = UI[id]();
-    renderSec(); render(); diagnose(); draw();
+    renderSec(); render(); diagnose(); draw(); updateUpgrade();
     if (!$("#monStop").disabled) $("#monStop").textContent=t("monitorInternet");
   }
   $("#lang").onclick = () => { lang = lang === "fa" ? "en" : "fa"; try { localStorage.setItem("ac_lang", lang); } catch (e) {} applyLang(); log("info", `language: ${lang}`); };
@@ -442,21 +442,25 @@
   // ======================================================== list & render ==
   let all = [], meta = null, filter = "all", dev = {}, mon = null;
 
+  // The server's genuine MTProto handshake is the baseline; an HTTPS probe
+  // in a web browser is only an approximate additional hint.
+  function rankScore(p, gf) {
+    const feedback = fb[pid(p)];
+    if(feedback === "fail") return 9e6;
+    const stability = p.ok / Math.max(1,p.tries);
+    const d=dev[key(p)];
+    const latency=Number.isFinite(d) && d>=0 ? .65*d+.35*p.ms : p.ms;
+    const typeCost=p.type==="faketls" ? 0 : p.type==="secure" ? 150 : 350;
+    return latency+(1-stability)*1200+typeCost
+      +Math.min(3,gf[grp(p)]||0)*1500-(feedback==="ok"?120:0);
+  }
   function view() {
-    let v = all.filter(p => filter === "all" || (filter === "faketls" ? p.type === "faketls" : p.type !== "faketls"));
-    const gf = groupFails(), tested = Object.keys(dev).length > 0;
-    const score = p => {
-      const f = fb[pid(p)];
-      if (f === "ok") return -1;
-      if (f === "fail") return 9e6;
-      const d = dev[key(p)];
-      const base = tested ? (d === undefined ? 1e6 : d < 0 ? 2e6 : d) : 0;
-      return base + Math.min(3, gf[grp(p)] || 0) * 2e6;
-    };
-    return v.map((p, i) => [p, i]).sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1]).map(x => x[0]);
+    const v=all.filter(p=>filter==="all"||(filter==="faketls"?p.type==="faketls":p.type!=="faketls"));
+    const gf=groupFails();
+    return v.map((p,i)=>[p,i]).sort((a,b)=>rankScore(a[0],gf)-rankScore(b[0],gf)||a[1]-b[1]).map(x=>x[0]);
   }
 
-  function render() {
+    function render() {
     const v = view(), list = $("#list"), gf = groupFails();
     list.innerHTML = "";
     v.forEach((p, i) => {
@@ -488,7 +492,8 @@
     });
     const best = v.find(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
     $("#best").href = best ? best.tg : "#";
-    $("#best").onclick = () => best && tried(best, v);
+    $("#best").onclick = e => { if (!best) { e.preventDefault(); return; } tried(best, v); };
+    updateUpgrade();
   }
 
   function copy(text, el) {
@@ -505,7 +510,9 @@
   // ===================================================== "connected?" bar ==
   let pending = null, pendingList = [];
   function tried(p, list) {
+    selectedProxy = p;
     pending = p; pendingList = list;
+    updateUpgrade();
     log("info", `opened in Telegram: ${key(p)} [${p.type}] group=${grp(p)} device=${dev[key(p)] ?? "untested"}`);
     bind("fbQ", () => { const b = document.createElement("b"); b.dir = "ltr"; b.textContent = key(pending || p); return t("fbQ") + " " + b.outerHTML; });
     $("#fb").style.display = "block";
@@ -514,7 +521,7 @@
   function closeBar() { $("#fb").style.display = "none"; pending = null; }
   $("#fbYes").onclick = () => {
     if (!pending) return;
-    fb[pid(pending)] = "ok"; saveFb();
+    fb[pid(pending)] = "ok"; selectedProxy = pending; saveFb();
     log("ok", `USER ✓: connected in Telegram via ${key(pending)}`);
     closeBar(); render(); diagnose();
   };
@@ -763,6 +770,85 @@
     d.className = "diag " + c; d.innerHTML = m;
   }
 
+  // GitHub Pages has no server process. Genuine MTProto validation is
+  // published by the scheduled GitHub Actions job. This tab polls it.
+  let refreshBusy=false,scanBusy=false,scanPosition=0,selectedProxy=null;
+  function updateUpgrade(){
+    const box=$("#upgrade");
+    if(!selectedProxy || pending || !all.length){box.classList.remove("show");return;}
+    const gf=groupFails();
+    const candidates=all.filter(p=>fb[pid(p)]!=="fail")
+      .sort((a,b)=>rankScore(a,gf)-rankScore(b,gf));
+    const best=candidates[0];
+    if(!best || pid(best)===pid(selectedProxy) ||
+        rankScore(best,gf)>rankScore(selectedProxy,gf)*.8){
+      box.classList.remove("show");return;
+    }
+    $("#upgradeText").textContent=t("improved");
+    const a=$("#upgradeGo");a.textContent=t("improvedGo");a.href=best.tg;
+    a.onclick=()=>tried(best,view());
+    box.classList.add("show");
+  }
+  async function refreshCatalog(){
+    if(refreshBusy || document.hidden)return;
+    refreshBusy=true;
+    try{
+      const r=await fetch("proxies.json?_="+Date.now(),{cache:"no-store"});
+      if(!r.ok)throw Error("HTTP "+r.status);
+      const d=await r.json();
+      if(!d || !Array.isArray(d.proxies) || !Number.isFinite(d.updated))throw Error("bad catalog JSON");
+      if(!meta || meta.updated!==d.updated){
+        meta=d;
+        all=d.proxies.filter(p=>p&&p.host&&p.secret&&Number.isFinite(p.ms));
+        const valid=new Set(all.map(p=>key(p)));
+        for(const k of Object.keys(dev))if(!valid.has(k))delete dev[k];
+        renderSec();render();
+        log("info","catalog refreshed: "+all.length+" proxies; updated="+new Date(d.updated*1000).toISOString());
+      }
+      bind("sub",()=>t("sub")(ago(d.updated),nf(d.live),nf(d.collected),nf(all.length)));
+    }catch(e){
+      if(!meta)bind("sub",()=>t("loadFail"));
+      log("warn","catalog refresh: "+e.message);
+    }finally{refreshBusy=false;}
+  }
+  // Every minute: recheck the best 12 plus a rotating batch of 48. Testing
+  // the whole catalog using HTTPS from mobile browsers would drain networks
+  // and cannot prove a real MTProto handshake. Server rankings remain primary.
+  async function minuteMonitor(){
+    if(scanBusy || document.hidden || !navigator.onLine || !all.length || $("#test").disabled)return;
+    scanBusy=true;
+    const eligible=all.filter(p=>!BAD.has(p.port)&&fb[pid(p)]!=="fail");
+    const front=view().filter(p=>!BAD.has(p.port)&&fb[pid(p)]!=="fail").slice(0,12);
+    const pick=new Map(front.map(p=>[key(p),p]));
+    const rotating=eligible.slice(scanPosition).concat(eligible.slice(0,scanPosition));
+    for(const p of rotating){
+      if(pick.size>=Math.min(60,eligible.length))break;
+      if(!pick.has(key(p)))pick.set(key(p),p);
+    }
+    scanPosition=eligible.length ? (scanPosition+48)%eligible.length : 0;
+    let cursor=0,ok=0;
+    const todo=[...pick.values()];
+    try{
+      await Promise.all(Array.from({length:12},async()=>{
+        while(cursor<todo.length && !document.hidden){
+          const p=todo[cursor++];
+          const r=await probeUrl(proxyUrl(p),2600);
+          // TLS/CORS errors do not mean that an MTProto proxy is dead.
+          if(r.state==="reply"){
+            const old=dev[key(p)];
+            dev[key(p)]=Number.isFinite(old)&&old>=0 ? Math.round(old*.55+r.ms*.45) : r.ms;
+            ok++;
+          }
+        }
+      }));
+      if(!document.hidden){
+        render();
+        log("info","minute browser hints: "+ok+"/"+todo.length+" HTTPS replies; MTProto handshake remains server-side");
+      }
+    }finally{scanBusy=false;}
+  }
+  setInterval(()=>{if(!document.hidden){refreshCatalog();minuteMonitor();}},60000);
+
   // ======================================================== matrix rain ==
   (function rain() {
     const c = $("#rain"), g = c.getContext("2d");
@@ -810,18 +896,9 @@
   if (prev.length) log("info", `earlier reports on this device: ${prev.filter(x => x === "ok").length} connected, ${prev.filter(x => x === "fail").length} failed`);
   netInfo();
 
-  fetch("proxies.json?_=" + Date.now(), { cache: "no-store" })
-    .then(r => r.json())
-    .then(d => {
-      meta = d; all = d.proxies || [];
-      bind("sub", () => t("sub")(ago(d.updated), nf(d.live), nf(d.collected), nf(all.length)));
-      log("info", `list loaded: ${all.length} proxies, built ${new Date(d.updated * 1000).toISOString().slice(0, 16)}Z` +
-        (d.removed ? ` · safety filter removed iran=${d.removed.iran} private=${d.removed.private} unresolved=${d.removed.unresolved}` : ""));
-      renderSec(); render();
-    })
-    .catch(e => { bind("sub", () => t("loadFail")); log("err", `list load failed: ${e.message}`); });
+  refreshCatalog().then(minuteMonitor);
 
-  checkTelegram();
+    checkTelegram();
   watch(null,true);
 })();
 </script>
