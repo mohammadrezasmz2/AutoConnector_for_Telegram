@@ -1,6 +1,7 @@
 name: Proxy web page
 
-# Every 30 minutes: collect public MTProto proxies, check them, rank them and
+# Every 30 minutes: collect public MTProto proxies, verify each with a real
+# MTProto handshake (must return Telegram's resPQ), rank them and
 # publish web/index.html + proxies.json to GitHub Pages.
 #
 # One-time setup: Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
@@ -36,7 +37,9 @@ jobs:
           python-version: "3.12"
 
       - name: Collect, check and rank proxies
-        run: python3 web/build_site.py --out site --top 300
+        run: |
+          pip install --quiet cryptography
+          python3 web/build_site.py --out site --top 300
 
       - uses: actions/configure-pages@v5
 

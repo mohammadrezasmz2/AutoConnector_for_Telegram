@@ -3,14 +3,14 @@
 AutoConnector — proxy web page builder.
 
 Collects public MTProto proxies from the sources in sources.txt, checks every
-one with real TCP connects (several rounds), ranks them by stability and
-latency, and writes a static site:
+one with a real MTProto handshake (the proxy must relay a request to Telegram
+and return a valid resPQ), ranks them by stability and speed, and writes:
 
     <out>/index.html     the page (Persian, RTL, one-tap "connect" buttons)
     <out>/proxies.json   ranked list the page reads
     <out>/proxies.txt    tg:// links of every live proxy, best first
 
-Only the Python standard library is needed. Runs the same way in GitHub
+Needs Python 3 and `pip install cryptography`. Runs the same way in GitHub
 Actions (-> GitHub Pages) and on your own server (cron).
 
     python3 web/build_site.py --out site
@@ -104,44 +104,33 @@ def collect(sources):
 
 
 # ------------------------------------------------------------------ check --
-async def tcp_ms(host, port, timeout):
-    t0 = time.perf_counter()
-    try:
-        _, w = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
-    except Exception:
-        return None
-    ms = (time.perf_counter() - t0) * 1000
-    w.close()
-    try:
-        await asyncio.wait_for(w.wait_closed(), 1)
-    except Exception:
-        pass
-    return ms
-
-
-async def check_all(endpoints, rounds, timeout, concurrency):
-    """endpoints: list of (host, port). Returns {(host,port): [ms or None, ...]}."""
+async def check_all(proxies, rounds, timeout, concurrency):
+    """Real MTProto handshake (resPQ from Telegram DC 2) for every proxy.
+    Returns {(host, port, secret): [ms or None, ...]}."""
+    from mtproto_check import check
     sem = asyncio.Semaphore(concurrency)
-    results = {ep: [] for ep in endpoints}
+    results = {p: [] for p in proxies}
 
-    async def one(ep):
+    async def one(p):
         async with sem:
-            results[ep].append(await tcp_ms(ep[0], ep[1], timeout))
+            results[p].append(await check(p[0], p[1], p[2], timeout))
 
-    todo = list(endpoints)
+    todo = list(proxies)
     for r in range(rounds):
-        await asyncio.gather(*(one(ep) for ep in todo))
-        if r == 0:  # only hosts that answered once get the extra rounds
-            todo = [ep for ep in todo if results[ep][0] is not None]
-            print(f"  round 1: {len(todo)} / {len(endpoints)} reachable", file=sys.stderr)
+        await asyncio.gather(*(one(p) for p in todo))
+        if r == 0:  # only proxies that passed once get the extra rounds
+            todo = [p for p in todo if results[p][0] is not None]
+            print(f"  round 1: {len(todo)} / {len(proxies)} answered a real MTProto handshake",
+                  file=sys.stderr)
         await asyncio.sleep(0.3)
     return results
 
 
 # ------------------------------------------------------------------ build --
 def kind(secret):
-    s = secret.lower()
-    if s.startswith("ee") or not re.fullmatch(r"[0-9a-f]+", s):
+    from mtproto_check import secret_hex
+    s = secret_hex(secret) or ""
+    if s.startswith("ee") and len(s) > 34:
         return "faketls"
     if s.startswith("dd"):
         return "secure"
@@ -151,7 +140,7 @@ def kind(secret):
 def build(proxies, results, rounds, top):
     live = []
     for host, port, secret in proxies:
-        samples = results.get((host, port)) or []
+        samples = results.get((host, port, secret)) or []
         ok = [x for x in samples if x is not None]
         if not ok:
             continue
@@ -180,8 +169,8 @@ def main():
     ap.add_argument("--sources", default=str(HERE / "sources.txt"))
     ap.add_argument("--top", type=int, default=300, help="proxies shown on the page")
     ap.add_argument("--rounds", type=int, default=3)
-    ap.add_argument("--timeout", type=float, default=3.0)
-    ap.add_argument("--concurrency", type=int, default=400)
+    ap.add_argument("--timeout", type=float, default=6.0)
+    ap.add_argument("--concurrency", type=int, default=300)
     ap.add_argument("--input", help="read proxies from a local file instead of the sources (testing)")
     a = ap.parse_args()
 
@@ -196,9 +185,8 @@ def main():
     if len(proxies) < 5:
         sys.exit("too few proxies collected — keeping the previous page")
 
-    endpoints = list(dict.fromkeys((h, p) for h, p, _ in proxies))
-    print(f"checking {len(endpoints)} host:port pairs…", file=sys.stderr)
-    results = asyncio.run(check_all(endpoints, a.rounds, a.timeout, a.concurrency))
+    print(f"handshake-checking {len(proxies)} proxies…", file=sys.stderr)
+    results = asyncio.run(check_all(proxies, a.rounds, a.timeout, a.concurrency))
     ranked, live = build(proxies, results, a.rounds, a.top)
     print(f"live: {len(live)}  on page: {len(ranked)}", file=sys.stderr)
     if not ranked:
