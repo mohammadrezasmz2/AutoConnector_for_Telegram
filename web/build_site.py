@@ -230,10 +230,15 @@ def build(proxies, results, rounds, top):
             "ok": len(ok), "tries": len(samples),
             "tg": f"tg://proxy?{q}", "tme": f"https://t.me/proxy?{q}",
         })
-    # FakeTLS first (plain/dd MTProto is usually caught by DPI in Iran), then
-    # stable (answered every round), then fastest
-    rank = {"faketls": 0, "secure": 1, "classic": 2}
-    live.sort(key=lambda p: (rank[p["type"]], -p["ok"] / max(p["tries"], 1), p["ms"]))
+    # Rank every real Telegram resPQ handshake by reliability and median RTT.
+    # FakeTLS retains a modest preference for DPI resilience; it must not push
+    # a slow or unreliable proxy ahead of a much faster, stable alternative.
+    type_penalty = {"faketls": 0, "secure": 120, "classic": 240}
+    def score(p):
+        reliability = p["ok"] / max(p["tries"], 1)
+        return (p["ms"] + (1 - reliability) * 1400 +
+                type_penalty.get(p["type"], 240), -reliability, p["ms"])
+    live.sort(key=score)
     # several secrets often share one host:port — keep the list diverse
     per_ep, ranked = {}, []
     for p in live:
