@@ -306,7 +306,7 @@
       fAll: "همه", fTls: "فقط FakeTLS", fOther: "dd و ساده",
       connect: "اتصال", copy: "کپی", watchT: "پایش زنده", xT: "در تلگرام وصل نشد (برای لغو دوباره بزنید)",
       tPlain: "ساده", tOk: "در تلگرام وصل شد", tFail: "در تلگرام وصل نشد", tGrp: n => `${n} هم‌گروه وصل نشد`, tSafe: "🛡 خارج از ایران",
-      server: "پینگ MTProto از سرور:", yourDev: "HTTPS تقریبی:", noReply: "نامشخص",
+      server: "پینگ MTProto از سرور:", yourDev: "HTTPS تقریبی:", noReply: "نامشخص", stabilityLbl: "پایداری MTProto", jitterLbl: "نوسان پینگ",
       sub: (a, l, c, n) => `به‌روزرسانی: ${a} · ${l} پروکسی تأییدشده از ${c} · نمایش ${n} تای برتر`,
       now: "همین الان", minAgo: m => `${m} دقیقه پیش`, hAgo: h => `${h} ساعت پیش`, loadFail: "لیست بارگذاری نشد؛ چند دقیقهٔ دیگر دوباره امتحان کنید.",
       testing: (d, n) => `تست از دستگاه شما: ${d} از ${n}…`, testDone: r => `بررسی تقریبی HTTPS تمام شد: ${r} پاسخ دریافت شد. رتبه فقط با تست MTProto و گزارش تلگرام تعیین می‌شود.`,
@@ -360,7 +360,7 @@
       fAll: "All", fTls: "FakeTLS only", fOther: "dd & plain",
       connect: "Connect", copy: "Copy", watchT: "Live watch", xT: "Didn't connect in Telegram (tap again to undo)",
       tPlain: "plain", tOk: "worked in Telegram", tFail: "failed in Telegram", tGrp: n => `${n} same-group failed`, tSafe: "🛡 outside Iran",
-      server: "MTProto RTT (test server):", yourDev: "HTTPS hint:", noReply: "unknown",
+      server: "MTProto RTT (test server):", yourDev: "HTTPS hint:", noReply: "unknown", stabilityLbl: "MTProto reliability", jitterLbl: "Ping jitter",
       sub: (a, l, c, n) => `Updated ${a} · ${l} verified of ${c} · showing top ${n}`,
       now: "just now", minAgo: m => `${m} min ago`, hAgo: h => `${h} h ago`, loadFail: "Couldn't load the list — try again in a few minutes.",
       testing: (d, n) => `Testing from your device: ${d} of ${n}…`, testDone: r => `HTTPS check finished: ${r} replies. Only MTProto checks and Telegram feedback determine rank.`,
@@ -620,7 +620,7 @@
     const v = view(), list = $("#list"), gf = groupFails();
     list.innerHTML = "";
     v.forEach((p, i) => {
-      const d = dev[key(p)], f = fb[pid(p)], g = gf[grp(p)] || 0;
+      const d = dev[key(p)], f = activeFail(p) ? "fail" : fb[pid(p)] === "ok" && freshFeedback(p) ? "ok" : null, g = gf[grp(p)] || 0;
       const li = document.createElement("li");
       if (mon && pid(mon) === pid(p)) li.classList.add("mon");
       if (f === "fail") li.classList.add("failed");
@@ -632,6 +632,7 @@
         (meta && meta.removed ? `<span class="tag sh">${t("tSafe")}</span>` : "") +
         (f === "ok" ? `<span class="tag okk">${t("tOk")}</span>` : f === "fail" ? `<span class="tag no">${t("tFail")}</span>` : g ? `<span class="tag no">${t("tGrp")(nf(g))}</span>` : "") +
         `<span>${t("server")} <b class="${cls(p.ms)}">${nf(p.ms)}ms</b> · ${nf(p.ok)}/${nf(p.tries)}</span>` +
+        (Number.isFinite(p.stability) ? `<span>${t("stabilityLbl")}: <b>${nf(p.stability)}%</b> · ${t("jitterLbl")}: ${nf(p.jitter)}ms</span>` : "") +
         (d === undefined ? "" : `<span>${t("yourDev")} <b class="${cls(d)}">${d < 0 ? t("noReply") : nf(d) + "ms"}</b></span>`) +
         `</span>`;
       li.querySelector(".host").textContent = p.host + ":" + p.port;
@@ -917,7 +918,7 @@
 
   // ========================================================== diagnosis ==
   function diagnose() {
-    const d = $("#diag"), D = t("d"), fails = Object.values(fb).filter(x => x === "fail").length, oks = Object.values(fb).filter(x => x === "ok").length;
+    const d = $("#diag"), D = t("d"), fails = all.filter(p => activeFail(p)).length, oks = all.filter(p => fb[pid(p)] === "ok" && freshFeedback(p)).length;
     let c = "", m;
     if (!navigator.onLine) { c = "bad"; m = D.offline; }
     else if (tg && tg.open) { c = "good"; m = D.tgOpen; }
