@@ -20,7 +20,7 @@ NOTE: latency is measured from the machine that runs this script. The page
 has a "test from my device" button that re-ranks the list from the visitor's
 own network.
 """
-import argparse, asyncio, html, json, re, shutil, ssl, statistics, sys, time
+import argparse, asyncio, hashlib, html, json, re, shutil, ssl, statistics, sys, time
 import urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -184,8 +184,12 @@ def safety_filter(proxies):
 
 # ------------------------------------------------------------------ check --
 async def check_all(proxies, rounds, timeout, concurrency):
-    """Real MTProto handshake (resPQ from Telegram DC 2) for every proxy.
-    Returns {(host, port, secret): [ms or None, ...]}."""
+    """MTProto resPQ checks with a second chance for transient first failures.
+
+    Unlike the previous implementation, a single first-round timeout does
+    not permanently exclude an otherwise usable proxy from this scan.
+    Every proxy that ever succeeds gets at least `rounds` total probes.
+    """
     from mtproto_check import check
     sem = asyncio.Semaphore(concurrency)
     results = {p: [] for p in proxies}
@@ -194,14 +198,23 @@ async def check_all(proxies, rounds, timeout, concurrency):
         async with sem:
             results[p].append(await check(p[0], p[1], p[2], timeout))
 
-    todo = list(proxies)
-    for r in range(rounds):
-        await asyncio.gather(*(one(p) for p in todo))
-        if r == 0:  # only proxies that passed once get the extra rounds
-            todo = [p for p in todo if results[p][0] is not None]
-            print(f"  round 1: {len(todo)} / {len(proxies)} answered a real MTProto handshake",
-                  file=sys.stderr)
-        await asyncio.sleep(0.3)
+    await asyncio.gather(*(one(p) for p in proxies))
+    missed = [p for p in proxies if results[p][0] is None]
+    print(f"  first check: {len(proxies) - len(missed)} / {len(proxies)} answered", file=sys.stderr)
+    if missed:
+        # Brief pause before retrying to reduce false negatives from bursts.
+        await asyncio.sleep(0.35)
+        await asyncio.gather(*(one(p) for p in missed))
+    live = [p for p in proxies if any(x is not None for x in results[p])]
+    print(f"  after retry: {len(live)} / {len(proxies)} answered real MTProto", file=sys.stderr)
+    for r in range(max(0, rounds - 1)):
+        await asyncio.sleep(0.25)
+        # Give everyone at least three attempts, including those that needed
+        # the rescue retry; extra attempts reveal unstable proxies.
+        active = [p for p in live if len(results[p]) < rounds]
+        if not active:
+            break
+        await asyncio.gather(*(one(p) for p in active))
     return results
 
 
@@ -216,30 +229,88 @@ def kind(secret):
     return "classic"
 
 
-def build(proxies, results, rounds, top):
-    live = []
+def history_key(proxy):
+    """No raw secrets are placed in historical measurement caches."""
+    return hashlib.sha256(("\\0".join(map(str, proxy))).encode()).hexdigest()
+
+
+def load_history(path):
+    if not path or not path.is_file():
+        return {}
+    try:
+        content = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(content, dict) or content.get("version") != 1:
+            return {}
+        return content.get("proxies", {}) if isinstance(content.get("proxies"), dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def build(proxies, results, rounds, top, history=None):
+    """Rank using verified MTProto latency, repeatability and recent history.
+
+    Measurements come from the build runner's network (NOT the visitor's).
+    The resulting score is lower-is-better, and is never download bandwidth.
+    """
+    history = history if history is not None else {}
+    live, now = [], int(time.time())
+    type_penalty = {"faketls": 0, "secure": 90, "classic": 160}
     for host, port, secret in proxies:
-        samples = results.get((host, port, secret)) or []
-        ok = [x for x in samples if x is not None]
-        if not ok:
+        pkey = (host, port, secret)
+        samples = results.get(pkey) or []
+        if not samples:
             continue
+        valid = [float(x) for x in samples if x is not None and x >= 0]
+        previous = history.get(history_key(pkey), {})
+        past = previous.get("runs", []) if isinstance(previous, dict) else []
+        past = [r for r in past[-8:] if isinstance(r, dict) and
+                0 <= now - int(r.get("t", 0)) < 7 * 86400]
+        previous_medians = [float(r["ms"]) for r in past
+                            if isinstance(r.get("ms"), (int, float)) and r["ms"] > 0]
+        median = statistics.median(valid) if valid else None
+        jitter = statistics.pstdev(valid) if len(valid) > 1 else 0
+        # Recent runs have less weight than today's multiple attempts;
+        # historical checks reduce the impact of single-run good luck.
+        past_ok = sum(float(r.get("ok", 0)) * (0.8 ** i)
+                      for i, r in enumerate(reversed(past)))
+        past_tries = sum(float(r.get("tries", 0)) * (0.8 ** i)
+                         for i, r in enumerate(reversed(past)))
+        weighted_ok = 3 * len(valid) + past_ok
+        weighted_tries = 3 * len(samples) + past_tries
+        reliability = min(1, weighted_ok / max(weighted_tries, 1))
+        obs = {"t": now, "ok": len(valid), "tries": len(samples),
+               "ms": round(median) if median is not None else None}
+        history[history_key(pkey)] = {"runs": (past + [obs])[-8:]}
+        if not valid:
+            continue  # no verified resPQ on the latest scan => not in catalog
+        historical_latency = (statistics.median(previous_medians[-5:])
+                              if previous_medians else median)
+        effective_latency = 0.8 * median + 0.2 * historical_latency
+        worst = max(valid)
+        kind_name = kind(secret)
+        # Penalize flapping and tail latency more than isolated low ping.
+        quality_score = (effective_latency + 0.25 * max(0, worst - median) +
+                         0.35 * jitter + (1 - reliability) * 1400 +
+                         type_penalty[kind_name])
         q = urllib.parse.urlencode({"server": host, "port": port, "secret": secret})
         live.append({
-            "host": host, "port": port, "secret": secret, "type": kind(secret),
-            "ms": round(statistics.median(ok)),
-            "ok": len(ok), "tries": len(samples),
+            "host": host, "port": port, "secret": secret, "type": kind_name,
+            "ms": round(median), "jitter": round(jitter),
+            "ok": len(valid), "tries": len(samples),
+            "stability": round(reliability * 100),
+            "samples": int(3 * len(samples) + round(past_tries)),
+            "score": round(quality_score, 1), "verified_at": now,
             "tg": f"tg://proxy?{q}", "tme": f"https://t.me/proxy?{q}",
         })
-    # Rank every real Telegram resPQ handshake by reliability and median RTT.
-    # FakeTLS retains a modest preference for DPI resilience; it must not push
-    # a slow or unreliable proxy ahead of a much faster, stable alternative.
-    type_penalty = {"faketls": 0, "secure": 120, "classic": 240}
-    def score(p):
-        reliability = p["ok"] / max(p["tries"], 1)
-        return (p["ms"] + (1 - reliability) * 1400 +
-                type_penalty.get(p["type"], 240), -reliability, p["ms"])
-    live.sort(key=score)
-    # several secrets often share one host:port — keep the list diverse
+    # Old cache entries expire; preserve only the last week of observations.
+    history_copy = {k: v for k, v in history.items() if isinstance(v, dict)
+                    and any(0 <= now - int(r.get("t", 0)) < 7 * 86400
+                            for r in v.get("runs", []) if isinstance(r, dict))}
+    history.clear()
+    history.update(history_copy)
+    live.sort(key=lambda p: (p["score"], -p["stability"], p["ms"]))
+    # Diversify host:port combinations to avoid one overloaded operator
+    # dominating the initial visible choices.
     per_ep, ranked = {}, []
     for p in live:
         k = (p["host"], p["port"])
@@ -247,6 +318,7 @@ def build(proxies, results, rounds, top):
         if per_ep[k] <= 2:
             ranked.append(p)
     return ranked[:top], live
+
 
 
 def main():
@@ -258,6 +330,7 @@ def main():
     ap.add_argument("--timeout", type=float, default=6.0)
     ap.add_argument("--concurrency", type=int, default=300)
     ap.add_argument("--input", help="read proxies from a local file instead of the sources (testing)")
+    ap.add_argument("--history", type=Path, help="optional rolling MTProto measurement cache")
     a = ap.parse_args()
 
     if a.input:
@@ -277,7 +350,8 @@ def main():
         sys.exit("too few proxies left after the safety filter — keeping the previous page")
     print(f"handshake-checking {len(proxies)} proxies…", file=sys.stderr)
     results = asyncio.run(check_all(proxies, a.rounds, a.timeout, a.concurrency))
-    ranked, live = build(proxies, results, a.rounds, a.top)
+    history = load_history(a.history)
+    ranked, live = build(proxies, results, a.rounds, a.top, history)
     print(f"live: {len(live)}  on page: {len(ranked)}", file=sys.stderr)
     if not ranked:
         sys.exit("no live proxies — keeping the previous page")
@@ -289,6 +363,10 @@ def main():
             "removed": removed, "proxies": ranked}
     (out / "proxies.json").write_text(json.dumps(meta, ensure_ascii=False, separators=(",", ":")))
     (out / "proxies.txt").write_text("\n".join(p["tg"] for p in live) + "\n")
+    if a.history:
+        a.history.parent.mkdir(parents=True, exist_ok=True)
+        a.history.write_text(json.dumps({"version": 1, "proxies": history},
+                                        separators=(",", ":")), encoding="utf-8")
     shutil.copy(HERE / "index.html", out / "index.html")
     (out / ".nojekyll").write_text("")
     print(f"wrote {out}/index.html, proxies.json, proxies.txt", file=sys.stderr)
