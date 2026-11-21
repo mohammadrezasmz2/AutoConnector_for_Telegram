@@ -1,0 +1,55 @@
+name: Proxy web page
+
+# Every 30 minutes: collect public MTProto proxies, check them, rank them and
+# publish web/index.html + proxies.json to GitHub Pages.
+#
+# One-time setup: Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+# The page is then at https://<user>.github.io/<repo>/
+#
+# This workflow does not push commits, so it never triggers the APK build.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths: [ "web/**", ".github/workflows/proxy-site.yml" ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: proxy-site
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect, check and rank proxies
+        run: python3 web/build_site.py --out site --top 300
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
