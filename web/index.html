@@ -120,6 +120,44 @@
   @media (max-width:520px){header{gap:7px}.head-actions{gap:5px}.head-actions button{padding:5px 8px}h1{font-size:19px}.wrap{padding-inline:12px}}
   @media (prefers-reduced-motion:reduce){#chartLbl::before{animation:none}}
 
+  .head-actions{position:relative}
+  #themeMenu{display:none;position:absolute;z-index:20;top:calc(100% + 7px);inset-inline-end:39px;min-width:175px;padding:7px;background:var(--card2);border:1px solid var(--line2);border-radius:8px;box-shadow:0 15px 32px rgba(0,0,0,.5)}
+  #themeMenu.open{display:grid;gap:4px}
+  #themeMenu button{width:100%;justify-content:flex-start;white-space:nowrap;padding:7px 10px;font-size:13px}
+  #themeMenu button[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
+  /* Keep main connect control white + black text, even after general .btn rules. */
+  .hero #best.btn.primary,
+  .hero #best.btn.primary:hover,
+  .hero #best.btn.primary:focus-visible{background:#fff!important;color:#101010!important;border:2px solid #fff!important;text-shadow:none!important;font-weight:800;box-shadow:0 0 18px rgba(255,255,255,.2)!important}
+  .hero #best.btn.primary:hover,.hero #best.btn.primary:focus-visible{background:#edf8f2!important}
+  html[data-theme="light"] .hero #best.btn.primary{border-color:#243e55!important;box-shadow:0 2px 11px rgba(25,55,81,.16)!important}
+  html[data-theme="matrix"]{--bg:#010702;--card:rgba(0,13,5,.93);--card2:rgba(2,27,10,.93);--line:#164b29;--line2:#287346;--fg:#e2ffe7;--mute:#83ac8b;--acc:#39ff88;--ok:#39ff88;--mid:#f6d758;--bad:#ff6372;--surface:#031509;--plot:#010b04;--plot-grid:rgba(48,219,102,.13);--plot-axis:rgba(80,235,133,.34);--plot-trace:#39ff88}
+  html[data-theme="matrix"] #rain{opacity:.54}
+  html[data-theme="matrix"] h1{text-shadow:0 0 13px rgba(57,255,136,.45)}
+  html[data-theme="matrix"] .panel{box-shadow:0 0 15px rgba(17,200,75,.08)}
+  html[data-theme="matrix"] .chip.on{box-shadow:0 0 13px rgba(57,255,136,.3)}
+  html[data-theme="matrix"] #chart{box-shadow:inset 0 0 15px rgba(21,185,76,.15)}
+  #securityDialog{position:fixed;inset:0;margin:auto;width:min(640px,calc(100vw - 28px));max-height:min(80vh,700px);overflow:auto;padding:18px;background:var(--card2);color:var(--fg);border:1px solid var(--line2);border-radius:12px;box-shadow:0 25px 65px rgba(0,0,0,.55);z-index:30}
+  #securityDialog:not([open]){display:none}
+  #securityDialog::backdrop{background:rgba(0,0,0,.75);backdrop-filter:blur(4px)}
+  .modal-head{display:flex;align-items:center;gap:10px;justify-content:space-between;margin-bottom:12px}
+  .modal-head h2{margin:0}
+  #securityDialog ul{list-style:none;margin:0;padding:0}
+  #securityDialog li{display:flex;gap:9px;align-items:flex-start;font-size:13.5px;margin:12px 0;line-height:1.85}
+  #securityDialog li b{white-space:nowrap}
+  .connection-log{margin:10px 0 14px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+  .connection-log summary{padding:10px 14px}
+  .connection-log .note{font-weight:normal}
+  .connection-log-inner{max-height:170px;overflow:auto;padding:0 12px 10px}
+  #connectionLog{display:grid;gap:6px;margin:0;padding:0;list-style:none;font:12px/1.65 Tahoma,Vazirmatn,"Segoe UI",system-ui,sans-serif}
+  #connectionLog li{display:flex;flex-wrap:wrap;gap:8px;border-bottom:1px solid var(--line);padding:5px 1px;color:var(--fg)}
+  #connectionLog li time{color:var(--mute);font:11px var(--mono);direction:ltr;white-space:nowrap}
+  #connectionLog li.info .event-mark{color:var(--ok)}
+  #connectionLog li.warn .event-mark{color:var(--mid)}
+  #connectionLog li.fail .event-mark{color:var(--bad)}
+  #connectionLog li .event-mark{width:12px;flex-shrink:0}
+  .connection-log .row{padding:0 12px 10px}
+
 </style>
 </head>
 <body>
@@ -132,16 +170,17 @@
       <div class="sub" id="sub">…</div>
     </div>
     <div class="head-actions">
-      <button id="securityToggle" type="button" title="امنیت / Security" aria-label="امنیت / Security" aria-controls="securityDetails" aria-expanded="false">🛡</button>
-      <button id="theme" type="button" title="تغییر تم / Toggle theme" aria-label="تغییر تم / Toggle theme">☀</button>
+      <button id="securityToggle" type="button" title="امنیت / Security" aria-label="امنیت / Security" aria-controls="securityDialog" aria-expanded="false">🛡</button>
+      <button id="theme" type="button" title="انتخاب تم / Theme" aria-label="انتخاب تم / Theme" aria-controls="themeMenu" aria-expanded="false">🌙</button>
+      <div id="themeMenu" role="group" aria-label="انتخاب تم">
+        <button type="button" data-theme-option="dark" data-i="themeDark"></button>
+        <button type="button" data-theme-option="matrix" data-i="themeMatrix"></button>
+        <button type="button" data-theme-option="light" data-i="themeLight"></button>
+      </div>
       <button id="lang" title="Language / زبان"></button>
     </div>
   </header>
 
-  <details class="panel sec" id="securityDetails">
-    <summary data-i="secT"></summary>
-    <ul id="secList"></ul>
-  </details>
   <div class="hero">
     <a class="btn primary" id="best" href="#" data-i="best"></a>
     <button id="test" data-i="test"></button>
@@ -178,6 +217,11 @@
     <p class="note" style="margin:10px 0 0" data-i="liveNote"></p>
   </section>
 
+  <details class="connection-log" id="connectionLogBox" open>
+    <summary><span data-i="connectionLogT"></span> <span class="note" id="connectionLogCount"></span></summary>
+    <div class="connection-log-inner"><ol id="connectionLog" aria-live="polite"></ol></div>
+    <div class="row"><button id="connectionLogCopy" data-i="connectionLogCopy"></button><button id="connectionLogClear" data-i="connectionLogClear"></button></div>
+  </details>
   <div class="chips" id="chips">
     <button class="chip on" data-f="all" data-i="fAll"></button>
     <button class="chip" data-f="faketls" data-i="fTls"></button>
@@ -208,6 +252,13 @@
   </footer>
 </div>
 
+<dialog class="sec" id="securityDialog" aria-labelledby="securityHeading">
+  <div class="modal-head">
+    <h2 id="securityHeading" data-i="secT"></h2>
+    <button id="securityClose" type="button" data-i="secClose"></button>
+  </div>
+  <ul id="secList"></ul>
+</dialog>
 <div id="fb"><div class="in">
   <span class="q" id="fbQ"></span>
   <button class="yes" id="fbYes" data-i="fbYes"></button>
