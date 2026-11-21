@@ -282,6 +282,9 @@
       speed: "⏱ تست سرعت (~۱۵ مگابایت)", tgRecheck: "🔄 بررسی دوبارهٔ تلگرام", monStop: "⏸ توقف پایش",
       liveNote: "سایت نمی‌تواند داخل برنامهٔ تلگرام را ببیند. ترافیک و وضعیت خود تلگرام را فقط اپ AutoConnector نشان می‌دهد. برای همین بعد از هر «اتصال» می‌پرسیم وصل شد یا نه، و دکمهٔ ✗ کنار هر پروکسی هست تا نتیجه ثبت شود.",
       secT: "🛡 امنیت",
+      secClose: "بستن ✕", themeDark: "🌑 مشکی (پیش‌فرض)", themeMatrix: "🟢 ماتریکس سبز", themeLight: "☀️ سفید",
+      connectionLogT: "📡 لاگ اتصال پروکسی‌ها", connectionLogCopy:"📋 کپی لاگ اتصال", connectionLogClear:"🗑 پاک کردن لاگ اتصال",
+      connectionEvents:{ready:"پایش اتصال آماده است؛ تأیید نهایی اتصال در تلگرام انجام می‌شود.",catalog:(n,live)=>`فهرست تازه: ${n} پروکسی برتر از ${live} پروکسی با پاسخ واقعی MTProto`,scan:(ok,n)=>`آزمون تقریبی مرورگر: ${ok} پاسخ HTTPS از ${n} پروکسی؛ نتیجهٔ قطعی MTProto نیست.`,opened:h=>`لینک پروکسی ${h} برای تلگرام باز شد؛ تأیید اتصال هنوز انجام نشده`,connected:h=>`✓ کاربر اتصال پروکسی ${h} را در تلگرام تأیید کرد`,failed:h=>`✗ کاربر اعلام کرد پروکسی ${h} به تلگرام وصل نشده`,tested:(ok,n)=>`تست دستگاه: ${ok} پاسخ تقریبی از ${n} پروکسی`,copied:h=>`لینک پروکسی ${h} کپی شد`,network:"وضعیت شبکه تغییر کرد"},
       reconnectHint: "💡 هر بار روی «اتصال» بزنید، بهترین گزینهٔ به‌روز شده به تلگرام پیشنهاد می‌شود؛ تغییر پروکسی در خود تلگرام با تأیید شماست.",
       improved: "✨ پروکسی سریع‌تری در فهرست پیدا شد. برای امتحان و جایگزینی در تلگرام روی دکمه بزنید.",
       improvedGo: "⚡ امتحان پروکسی بهتر",
@@ -332,6 +335,9 @@
       speed: "⏱ Speed test (~15 MB)", tgRecheck: "🔄 Re-check Telegram", monStop: "⏸ Stop watching",
       liveNote: "The site can't see inside the Telegram app; only the AutoConnector app shows Telegram's own traffic and state. That's why it asks after every “Connect” whether it worked, and every proxy has a ✗ button to record the result.",
       secT: "🛡 Security",
+      secClose: "Close ✕", themeDark: "🌑 Black (default)", themeMatrix: "🟢 Matrix green", themeLight: "☀️ White",
+      connectionLogT: "📡 Proxy connection log",connectionLogCopy:"📋 Copy connection log",connectionLogClear:"🗑 Clear connection log",
+      connectionEvents:{ready:"Monitoring is ready; Telegram connection still requires user confirmation.",catalog:(n,live)=>`New catalog: top ${n} proxies from ${live} real MTProto handshake responders`,scan:(ok,n)=>`Browser HTTPS hints: ${ok} responses out of ${n}; this is not a verified MTProto result.`,opened:h=>`Opened proxy ${h} in Telegram; awaiting connection confirmation`,connected:h=>`✓ User confirmed Telegram connected using proxy ${h}`,failed:h=>`✗ User reported Telegram failed to connect using proxy ${h}`,tested:(ok,n)=>`Device hints: ${ok} responses out of ${n} proxies`,copied:h=>`Copied proxy link for ${h}`,network:"Network connectivity changed"},
       reconnectHint: "💡 Every Connect uses the latest best-ranked proxy. Telegram still needs your confirmation to switch.",
       improved: "✨ A faster candidate is available. Tap to try replacing the proxy in Telegram.",
       improvedGo: "⚡ Try faster proxy",
@@ -385,37 +391,70 @@
   const span = (c, txt) => `<span class="${c}">${txt}</span>`;
 
 
-  let theme = "dark";
-  try { theme = localStorage.getItem("ac_theme") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"); } catch(e) {}
-  function applyTheme() {
-    document.documentElement.dataset.theme = theme;
-    $("#theme").textContent = theme === "dark" ? "☀️" : "🌙";
-    $("#theme").setAttribute("aria-pressed", String(theme === "light"));
-    document.querySelector('meta[name="theme-color"]').content = theme === "dark" ? "#000000" : "#f1f5f9";
+  const THEMES=["dark","matrix","light"];
+  let theme="dark";
+  try{const saved=localStorage.getItem("ac_theme");if(THEMES.includes(saved))theme=saved;}catch(e){}
+  function applyTheme(){
+    document.documentElement.dataset.theme=theme;
+    const icon={dark:"🌙",matrix:"🟢",light:"☀️"};
+    const label={dark:"themeDark",matrix:"themeMatrix",light:"themeLight"};
+    $("#theme").textContent=icon[theme];
+    $("#theme").setAttribute("title",t(label[theme]));
+    $("#theme").setAttribute("aria-label",t(label[theme]));
+    document.querySelectorAll("[data-theme-option]").forEach(el=>{
+      el.setAttribute("aria-pressed",String(el.dataset.themeOption===theme));
+    });
+    document.querySelector('meta[name="theme-color"]').content=
+      ({dark:"#000000",matrix:"#010702",light:"#f1f5f9"})[theme];
     draw();
   }
-  $("#theme").onclick = () => {
-    theme = theme === "dark" ? "light" : "dark";
-    try { localStorage.setItem("ac_theme", theme); } catch(e) {}
-    applyTheme();
+  function closeThemeMenu(){
+    $("#themeMenu").classList.remove("open");
+    $("#theme").setAttribute("aria-expanded","false");
+  }
+  $("#theme").onclick=()=>{
+    const open=$("#themeMenu").classList.toggle("open");
+    $("#theme").setAttribute("aria-expanded",String(open));
   };
-  $("#securityToggle").onclick = () => {
-    const box = $("#securityDetails");
-    box.open = !box.open;
-    $("#securityToggle").setAttribute("aria-expanded", String(box.open));
-    if (box.open) box.scrollIntoView({behavior:"smooth",block:"nearest"});
+  $("#themeMenu").addEventListener("click",e=>{
+    const choice=e.target.closest("[data-theme-option]");
+    if(!choice)return;
+    theme=choice.dataset.themeOption;
+    try{localStorage.setItem("ac_theme",theme);}catch(e){}
+    applyTheme();closeThemeMenu();
+  });
+  document.addEventListener("click",e=>{
+    if(!e.target.closest(".head-actions"))closeThemeMenu();
+  });
+  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeThemeMenu();});
+  const securityDialog=$("#securityDialog");
+  $("#securityToggle").onclick=()=>{
+    if(typeof securityDialog.showModal==="function")securityDialog.showModal();
+    else securityDialog.setAttribute("open","");
+    $("#securityToggle").setAttribute("aria-expanded","true");
   };
-  $("#securityDetails").addEventListener("toggle", () => {
-    $("#securityToggle").setAttribute("aria-expanded", String($("#securityDetails").open));
+  $("#securityClose").onclick=()=>{
+    if(typeof securityDialog.close==="function")securityDialog.close();
+    else securityDialog.removeAttribute("open");
+    $("#securityToggle").setAttribute("aria-expanded","false");
+    $("#securityToggle").focus();
+  };
+  securityDialog.addEventListener("close",()=>{
+    $("#securityToggle").setAttribute("aria-expanded","false");
+  });
+  securityDialog.addEventListener("click",e=>{
+    if(e.target===securityDialog)$("#securityClose").click();
   });
 
-  function applyLang() {
+    function applyLang() {
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
     document.querySelectorAll("[data-i]").forEach(el => { el.textContent = t(el.dataset.i); });
     $("#lang").textContent = lang === "fa" ? "EN" : "فا";
     $("#help").innerHTML = t("help").map(h => `<li>${h}</li>`).join("");
     for (const id in UI) $("#" + id).innerHTML = UI[id]();
+    applyTheme();
+    renderConnectionLog();
     renderSec(); render(); diagnose(); draw(); updateUpgrade();
     if (!$("#monStop").disabled) $("#monStop").textContent=t("monitorInternet");
   }
