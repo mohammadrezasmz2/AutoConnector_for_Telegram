@@ -495,6 +495,46 @@
   };
   $("#logClear").onclick = () => { LOG.length = 0; $("#log").innerHTML = ""; bind("logCount", () => ""); };
 
+
+  // Site cannot inspect Telegram internals. Separate log lists the source of
+  // every claim: verified server catalog, browser HTTPS hint or user feedback.
+  const CONNECTION_EVENTS=[];
+  function connectionLog(level,kind,...args){
+    CONNECTION_EVENTS.unshift({time:new Date(),level,kind,args});
+    if(CONNECTION_EVENTS.length>120)CONNECTION_EVENTS.length=120;
+    renderConnectionLog();
+  }
+  function connectionText(entry){
+    const msg=t("connectionEvents")[entry.kind];
+    return typeof msg==="function" ? msg(...entry.args) : (msg || entry.kind);
+  }
+  function renderConnectionLog(){
+    const el=$("#connectionLog");
+    if(!el)return;
+    const frag=document.createDocumentFragment();
+    for(const item of CONNECTION_EVENTS){
+      const li=document.createElement("li");
+      li.className=item.level;
+      const mark=document.createElement("span");
+      mark.className="event-mark";
+      mark.textContent=item.level==="fail" ? "✗" : item.level==="warn" ? "!" : "✓";
+      const time=document.createElement("time");
+      time.dateTime=item.time.toISOString();
+      time.textContent=item.time.toTimeString().slice(0,8);
+      const message=document.createElement("span");
+      message.textContent=connectionText(item);
+      li.append(mark,time,message);frag.append(li);
+    }
+    el.replaceChildren(frag);
+    $("#connectionLogCount").textContent="("+nf(CONNECTION_EVENTS.length)+")";
+  }
+  $("#connectionLogCopy").onclick=()=>{
+    const text=CONNECTION_EVENTS.map(e=>e.time.toISOString()+" "+e.level.toUpperCase()+" "+connectionText(e)).join("\n");
+    if(navigator.clipboard)navigator.clipboard.writeText(text).catch(()=>prompt("Connection log:",text));
+    else prompt("Connection log:",text);
+  };
+  $("#connectionLogClear").onclick=()=>{CONNECTION_EVENTS.length=0;renderConnectionLog();};
+
   // ======================================================= user feedback ==
   let fb = {};                                   // pid -> "ok" | "fail"
   try { fb = JSON.parse(localStorage.getItem("ac_fb") || "{}"); } catch (e) {}
@@ -506,6 +546,7 @@
   }
   function markFail(p, why) {
     fb[pid(p)] = "fail"; saveFb();
+    connectionLog("fail","failed",key(p));
     const s = stats(), g = grp(p);
     const peers = all.filter(q => grp(q) === g && pid(q) !== pid(p) && !fb[pid(q)]).length;
     log("err", `USER ✗: ${key(p)} did NOT connect in Telegram (${why})` +
@@ -577,7 +618,7 @@
         render(); diagnose();
       };
       li.querySelector(".pm").onclick = () => watch(p);
-      li.querySelector(".cp").onclick = e => copy(p.tg, e.target);
+      li.querySelector(".cp").onclick = e => {copy(p.tg,e.target);connectionLog("info","copied",key(p));};
       list.appendChild(li);
     });
     const best = v.find(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
@@ -604,6 +645,7 @@
     pending = p; pendingList = list;
     updateUpgrade();
     log("info", `opened in Telegram: ${key(p)} [${p.type}] group=${grp(p)} device=${dev[key(p)] ?? "untested"}`);
+    connectionLog("warn","opened",key(p));
     bind("fbQ", () => { const b = document.createElement("b"); b.dir = "ltr"; b.textContent = key(pending || p); return t("fbQ") + " " + b.outerHTML; });
     $("#fb").style.display = "block";
     watch(p, true);
@@ -613,6 +655,7 @@
     if (!pending) return;
     fb[pid(pending)] = "ok"; selectedProxy = pending; saveFb();
     log("ok", `USER ✓: connected in Telegram via ${key(pending)}`);
+    connectionLog("info","connected",key(pending));
     closeBar(); render(); diagnose();
   };
   $("#fbNo").onclick = () => {
@@ -839,6 +882,7 @@
     };
     await Promise.all(Array.from({ length: 6 }, worker));
     pxSummary = { ...counts, n: uniq.length };
+    connectionLog("info","tested",nf(counts.reply),nf(uniq.length));
     log(counts.reply ? "ok" : "err", `device test done: reply ${counts.reply}, timeout ${counts.timeout}, reset ${counts.reset} (of ${uniq.length})`);
     bind("status", () => t("testDone")(nf(counts.reply)));
     bind("tPx", () => span(counts.reply ? "g" : "r", t("ofN")(nf(counts.reply), nf(uniq.length))));
@@ -894,6 +938,7 @@
         for(const k of Object.keys(dev))if(!valid.has(k))delete dev[k];
         renderSec();render();
         log("info","catalog refreshed: "+all.length+" proxies; updated="+new Date(d.updated*1000).toISOString());
+        connectionLog("info","catalog",nf(all.length),nf(d.live));
       }
       bind("sub",()=>t("sub")(ago(d.updated),nf(d.live),nf(d.collected),nf(all.length)));
     }catch(e){
@@ -934,6 +979,7 @@
       if(!document.hidden){
         render();
         log("info","minute browser hints: "+ok+"/"+todo.length+" HTTPS replies; MTProto handshake remains server-side");
+        connectionLog(ok ? "info" : "warn","scan",nf(ok),nf(todo.length));
       }
     }finally{scanBusy=false;}
   }
@@ -985,6 +1031,7 @@
   const prev = Object.values(fb);
   if (prev.length) log("info", `earlier reports on this device: ${prev.filter(x => x === "ok").length} connected, ${prev.filter(x => x === "fail").length} failed`);
   netInfo();
+  connectionLog("info","ready");
 
   refreshCatalog().then(minuteMonitor);
 
