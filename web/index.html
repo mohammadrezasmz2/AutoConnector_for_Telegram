@@ -6,23 +6,42 @@
 <meta name="robots" content="noindex">
 <title>پروکسی‌های تلگرام — AutoConnector</title>
 <style>
-  :root{--bg:#0f1419;--card:#182029;--line:#26313d;--fg:#e6edf3;--mute:#8b98a5;--acc:#2aabee;--ok:#3fb950;--mid:#d29922;--bad:#f85149}
-  @media (prefers-color-scheme:light){:root{--bg:#f4f6f8;--card:#fff;--line:#e1e6eb;--fg:#1b232c;--mute:#5d6b78}}
+  :root{--bg:#0f1419;--card:#182029;--card2:#1e2833;--line:#26313d;--fg:#e6edf3;--mute:#8b98a5;--acc:#2aabee;--ok:#3fb950;--mid:#d29922;--bad:#f85149}
+  @media (prefers-color-scheme:light){:root{--bg:#f4f6f8;--card:#fff;--card2:#f7f9fb;--line:#e1e6eb;--fg:#1b232c;--mute:#5d6b78}}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 Tahoma,"Segoe UI",Vazirmatn,system-ui,sans-serif}
-  .wrap{max-width:760px;margin:0 auto;padding:18px 14px 60px}
+  .wrap{max-width:760px;margin:0 auto;padding:18px 14px 90px}
   h1{font-size:20px;margin:4px 0 2px}
-  .sub{color:var(--mute);font-size:13px}
+  h2{font-size:16px;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+  .sub,.note{color:var(--mute);font-size:13px}
   .hero{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 10px}
   button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:9px 14px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
   .primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:bold;flex:1 1 220px;justify-content:center;padding:13px}
   button:disabled{opacity:.55;cursor:default}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block}
+  .dot.live{background:var(--ok);box-shadow:0 0 0 0 rgba(63,185,80,.6);animation:pulse 1.6s infinite}
+  @keyframes pulse{70%{box-shadow:0 0 0 7px rgba(63,185,80,0)}100%{box-shadow:0 0 0 0 rgba(63,185,80,0)}}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .tile{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-height:66px}
+  .tile .k{font-size:12px;color:var(--mute)}
+  .tile .v{font-size:18px;font-weight:bold;direction:ltr;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .s{font-size:11px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .diag{margin-top:10px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card2);font-size:14px}
+  .diag.warn{border-color:var(--mid)}.diag.bad{border-color:var(--bad)}.diag.good{border-color:var(--ok)}
+  .chartbox{margin-top:10px;position:relative}
+  canvas{width:100%;height:120px;display:block;background:var(--card2);border:1px solid var(--line);border-radius:10px}
+  .chartlbl{font-size:12px;color:var(--mute);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .row button{font-size:13px;padding:7px 12px}
   .chips{display:flex;gap:6px;margin:6px 0 12px;flex-wrap:wrap}
   .chip{padding:5px 12px;border-radius:99px;font-size:13px}
   .chip.on{border-color:var(--acc);color:var(--acc)}
   #status{color:var(--mute);font-size:13px;min-height:20px;margin-bottom:8px}
   ol{list-style:none;padding:0;margin:0}
   li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center}
+  li.mon{border-color:var(--acc)}
+  li.failed{opacity:.6}
   .rk{color:var(--mute);font-size:13px;min-width:22px;text-align:center}
   .host{direction:ltr;text-align:right;font-family:ui-monospace,Consolas,monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .meta{grid-column:2;font-size:12px;color:var(--mute);display:flex;gap:10px;flex-wrap:wrap}
@@ -30,8 +49,15 @@
   .acts .btn,.acts button{padding:7px 11px;font-size:13px}
   .go{background:var(--acc);border-color:var(--acc);color:#fff}
   .tag{border:1px solid var(--line);border-radius:6px;padding:0 6px}
+  .tag.okk{border-color:var(--ok);color:var(--ok)}.tag.no{border-color:var(--bad);color:var(--bad)}
   .g{color:var(--ok)}.y{color:var(--mid)}.r{color:var(--bad)}
-  details{margin-top:22px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+  #log{direction:ltr;text-align:left;font:12px/1.5 ui-monospace,Consolas,monospace;background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;height:240px;overflow:auto;white-space:pre-wrap;margin:0}
+  #log .e{color:var(--bad)}#log .w{color:var(--mid)}#log .o{color:var(--ok)}#log .t{color:var(--mute)}
+  #fb{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:2px solid var(--acc);padding:10px 14px;display:none;z-index:5}
+  #fb .in{max-width:760px;margin:0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #fb .q{flex:1 1 200px;font-size:14px}
+  #fb .yes{border-color:var(--ok);color:var(--ok)}#fb .no{border-color:var(--bad);color:var(--bad)}
+  details{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
   summary{cursor:pointer;font-weight:bold}
   details p,details li{font-size:14px}
   details ol{list-style:decimal;padding-right:20px}
@@ -51,6 +77,32 @@
     <button id="test" title="از روی شبکهٔ همین دستگاه تست می‌کند">📶 تست از دستگاه من</button>
   </div>
 
+  <!-- ===================== live status ===================== -->
+  <section class="panel">
+    <h2><span class="dot" id="liveDot"></span> وضعیت زنده</h2>
+    <div class="tiles">
+      <div class="tile"><div class="k">اینترنت شما</div><div class="v" id="tNet">…</div><div class="s" id="tNetS"></div></div>
+      <div class="tile"><div class="k">تلگرام بدون پروکسی</div><div class="v" id="tTg">…</div><div class="s" id="tTgS"></div></div>
+      <div class="tile"><div class="k">پروکسی‌ها از شبکهٔ شما</div><div class="v" id="tPx">—</div><div class="s" id="tPxS">«تست از دستگاه من» را بزنید</div></div>
+      <div class="tile"><div class="k">پینگ اینترنت</div><div class="v" id="tPing">—</div><div class="s" id="tPingS">تا Cloudflare</div></div>
+      <div class="tile"><div class="k">دانلود</div><div class="v" id="tDown">—</div><div class="s" id="tDownS">«تست سرعت» را بزنید</div></div>
+      <div class="tile"><div class="k">آپلود</div><div class="v" id="tUp">—</div><div class="s" id="tUpS"></div></div>
+      <div class="tile"><div class="k">پروکسی زیر نظر</div><div class="v" id="tMon">—</div><div class="s" id="tMonS">روی 📈 یک پروکسی بزنید</div></div>
+      <div class="tile"><div class="k">پایداری پروکسی</div><div class="v" id="tLoss">—</div><div class="s" id="tLossS"></div></div>
+    </div>
+    <div class="diag" id="diag">در حال بررسی شبکه…</div>
+    <div class="chartbox">
+      <div class="chartlbl" id="chartLbl">پینگ زنده (هر ۲ ثانیه)</div>
+      <canvas id="chart"></canvas>
+    </div>
+    <div class="row">
+      <button id="speed">⏱ تست سرعت <span class="note">(~۱۵ مگابایت)</span></button>
+      <button id="tgRecheck">🔄 بررسی دوبارهٔ تلگرام</button>
+      <button id="monStop" disabled>⏸ توقف پایش</button>
+    </div>
+    <p class="note" style="margin:10px 0 0">سایت نمی‌تواند داخل برنامهٔ تلگرام را ببیند. ترافیک و وضعیت خود تلگرام را فقط اپ AutoConnector نشان می‌دهد. برای همین بعد از هر «اتصال» از شما می‌پرسیم وصل شد یا نه، تا در لاگ ثبت شود.</p>
+  </section>
+
   <div class="chips" id="chips">
     <button class="chip on" data-f="all">همه</button>
     <button class="chip" data-f="faketls">فقط <bdi>FakeTLS</bdi></button>
@@ -59,13 +111,24 @@
   <div id="status"></div>
   <ol id="list"></ol>
 
+  <!-- ===================== log ===================== -->
+  <details id="logBox" open>
+    <summary>لاگ <span class="note" id="logCount"></span></summary>
+    <div class="row" style="margin:8px 0">
+      <button id="logCopy">📋 کپی لاگ (برای ارسال)</button>
+      <button id="logClear">🗑 پاک کردن</button>
+    </div>
+    <pre id="log"></pre>
+  </details>
+
   <details>
     <summary>راهنما</summary>
     <ol>
-      <li>روی «اتصال» بزنید؛ تلگرام باز می‌شود و پنجرهٔ افزودن پروکسی را نشان می‌دهد. «Connect» را بزنید.</li>
-      <li>همهٔ پروکسی‌های این لیست با handshake واقعی تلگرام تأیید شده‌اند، ولی از روی سرور گیت‌هاب (خارج از ایران). ممکن است بعضی‌شان در ایران فیلتر باشند. برای اینکه بهترین‌ها <b>برای شبکهٔ خودتان</b> بالا بیایند، «تست از دستگاه من» را بزنید (حدود ۲۰ ثانیه). اگر VPN روشن است، اول خاموشش کنید.</li>
-      <li>تست دستگاه تقریبی است (مرورگر نمی‌تواند handshake واقعی MTProto بزند)؛ اگر یکی وصل نشد، بعدی را امتحان کنید. پروکسی‌های FakeTLS معمولاً در برابر فیلترینگ مقاوم‌ترند.</li>
-      <li>برای اتصال کاملاً خودکار و جابه‌جایی خودکار پروکسی، خود اپ AutoConnector را نصب کنید.</li>
+      <li>اگر VPN روشن است، خاموشش کنید. در تنظیمات پروکسی تلگرام، پروکسی‌های قدیمی را پاک کنید.</li>
+      <li>«تست از دستگاه من» را بزنید تا پروکسی‌هایی که از شبکهٔ شما در دسترس‌اند بالا بیایند.</li>
+      <li>روی «اتصال» بزنید، در تلگرام «Connect» را بزنید و حدود ۱۰ ثانیه صبر کنید. بعد در نوار پایین صفحه جواب بدهید: وصل شد یا نه. با «وصل نشد، بعدی» پروکسی بعدی خودکار باز می‌شود.</li>
+      <li>همهٔ پروکسی‌های لیست با handshake واقعی تلگرام تأیید شده‌اند، ولی از سرور گیت‌هاب (خارج از ایران). تست از دستگاه شما فقط نشان می‌دهد پروکسی از شبکه‌تان در دسترس است. اینکه فیلترینگ جلوی خود اتصال تلگرام را بگیرد یا نه را فقط با امتحان در تلگرام می‌شود فهمید.</li>
+      <li>اگر چند پروکسی پشت سر هم وصل نشد، «کپی لاگ» را بزنید و لاگ را بفرستید.</li>
     </ol>
   </details>
 
@@ -76,53 +139,117 @@
   </footer>
 </div>
 
+<div id="fb"><div class="in">
+  <span class="q" id="fbQ"></span>
+  <button class="yes" id="fbYes">✓ وصل شد</button>
+  <button class="no" id="fbNo">✗ وصل نشد، بعدی</button>
+  <button id="fbX" title="بستن">✕</button>
+</div></div>
+
 <script>
 (() => {
   const $ = s => document.querySelector(s);
-  let all = [], filter = "all", dev = {};           // dev[key] = ms | -1 (failed)
+  const fa = n => Number(n).toLocaleString("fa-IR");
   const key = p => p.host + ":" + p.port;
+  const pid = p => p.host + ":" + p.port + ":" + p.secret;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const cls = ms => ms == null || ms < 0 ? "r" : ms < 250 ? "g" : ms < 700 ? "y" : "r";
 
-  // Ports browsers refuse to fetch (Chromium/Firefox "bad ports"): an instant
-  // error there would look like a super-fast proxy, so they are skipped.
+  // ---------------------------------------------------------------- log --
+  const LOG = [];
+  function log(level, msg) {
+    const t = new Date(), ts = t.toTimeString().slice(0, 8);
+    LOG.push(`${ts} ${level.toUpperCase().padEnd(4)} ${msg}`);
+    if (LOG.length > 800) LOG.shift();
+    const el = $("#log"), atEnd = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    const line = document.createElement("div");
+    line.className = { err: "e", warn: "w", ok: "o", info: "" }[level] || "";
+    line.innerHTML = `<span class="t">${ts}</span> `;
+    line.appendChild(document.createTextNode(msg));
+    el.appendChild(line);
+    while (el.childNodes.length > 800) el.removeChild(el.firstChild);
+    if (atEnd) el.scrollTop = el.scrollHeight;
+    $("#logCount").textContent = `(${fa(LOG.length)} خط)`;
+  }
+  $("#logCopy").onclick = () => {
+    const txt = LOG.join("\n"), b = $("#logCopy"), o = b.textContent;
+    const done = () => { b.textContent = "✓ کپی شد"; setTimeout(() => b.textContent = o, 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(txt).then(done, () => prompt("لاگ:", txt)); else prompt("لاگ:", txt);
+  };
+  $("#logClear").onclick = () => { LOG.length = 0; $("#log").innerHTML = ""; $("#logCount").textContent = ""; };
+
+  // --------------------------------------------------------- user feedback --
+  // what the visitor reported after trying a proxy in Telegram: pid -> "ok" | "fail"
+  let fb = {};
+  try { fb = JSON.parse(localStorage.getItem("ac_fb") || "{}"); } catch (e) {}
+  const saveFb = () => { try { localStorage.setItem("ac_fb", JSON.stringify(fb)); } catch (e) {} };
+
+  // ------------------------------------------------------------- probing --
+  // Ports browsers refuse to fetch (an instant error there means nothing).
   const BAD = new Set([1,7,9,11,13,15,17,19,20,21,22,23,25,37,42,43,53,69,77,79,87,95,101,102,103,104,109,110,111,113,115,117,119,123,135,137,139,143,161,179,389,427,465,512,513,514,515,526,530,531,532,540,548,554,556,563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659,4045,4190,5060,5061,6000,6566,6665,6666,6667,6668,6669,6679,6697,10080]);
 
-  function ago(t) {
-    const m = Math.round((Date.now() / 1000 - t) / 60);
-    return m < 1 ? "همین الان" : m < 60 ? fa(m) + " دقیقه پیش" : fa(Math.round(m / 60)) + " ساعت پیش";
+  // One request from THIS device. Returns {state, ms}:
+  //   "reply"   — something answered (response or TLS/protocol error after a round trip)
+  //   "timeout" — nothing came back: typical of a filtered address
+  //   "reset"   — failed instantly: refused locally or reset by a filter
+  async function probeUrl(url, timeout = 4000) {
+    const ctl = new AbortController(), t0 = performance.now();
+    const timer = setTimeout(() => ctl.abort(), timeout);
+    let state = "reply";
+    try { await fetch(url, { mode: "no-cors", cache: "no-store", signal: ctl.signal }); }
+    catch (e) { if (ctl.signal.aborted) state = "timeout"; }
+    clearTimeout(timer);
+    const ms = Math.round(performance.now() - t0);
+    if (state === "reply" && ms < 8) state = "reset";
+    return { state, ms };
   }
-  const fa = n => Number(n).toLocaleString("fa-IR");
-  const cls = ms => ms < 0 ? "r" : ms < 250 ? "g" : ms < 700 ? "y" : "r";
+  const proxyUrl = p => `https://${p.host}:${p.port}/?_=${Math.random()}`;
+  const stateFa = s => ({ reply: "پاسخ داد", timeout: "بی‌پاسخ (تایم‌اوت)", reset: "رد شد فوری" })[s];
+
+  // --------------------------------------------------------- state & list --
+  let all = [], filter = "all", dev = {};           // dev[host:port] = ms | -1
+  let mon = null;                                    // proxy under live watch
 
   function view() {
     let v = all.filter(p => filter === "all" || (filter === "faketls" ? p.type === "faketls" : p.type !== "faketls"));
-    if (Object.keys(dev).length) {
-      const s = p => { const d = dev[key(p)]; return d === undefined ? 1e6 : d < 0 ? 2e6 : d; };
-      v = v.slice().sort((a, b) => s(a) - s(b));
-    }
-    return v;
+    const score = p => {
+      const f = fb[pid(p)];
+      if (f === "ok") return -1;
+      if (f === "fail") return 3e6;
+      const d = dev[key(p)];
+      return Object.keys(dev).length ? (d === undefined ? 1e6 : d < 0 ? 2e6 : d) : 0;
+    };
+    return v.map((p, i) => [p, i]).sort((a, b) => score(a[0]) - score(b[0]) || a[1] - b[1]).map(x => x[0]);
   }
 
   function render() {
     const v = view(), list = $("#list");
     list.innerHTML = "";
     v.forEach((p, i) => {
-      const d = dev[key(p)];
+      const d = dev[key(p)], f = fb[pid(p)];
       const li = document.createElement("li");
+      if (mon && pid(mon) === pid(p)) li.classList.add("mon");
+      if (f === "fail") li.classList.add("failed");
       li.innerHTML =
         `<span class="rk">${fa(i + 1)}</span>` +
         `<span class="host"></span>` +
-        `<span class="acts"><a class="btn go">اتصال</a><button class="cp" title="کپی لینک">کپی</button></span>` +
+        `<span class="acts"><a class="btn go">اتصال</a><button class="pm" title="پایش زنده">📈</button><button class="cp" title="کپی لینک">کپی</button></span>` +
         `<span class="meta"><span class="tag">${p.type === "faketls" ? "FakeTLS" : p.type === "secure" ? "dd" : "ساده"}</span>` +
+        (f === "ok" ? `<span class="tag okk">در تلگرام وصل شد</span>` : f === "fail" ? `<span class="tag no">در تلگرام وصل نشد</span>` : "") +
         `<span>سرور: <b class="${cls(p.ms)}">${fa(p.ms)}ms</b> · ${fa(p.ok)}/${fa(p.tries)}</span>` +
         (d === undefined ? "" : `<span>دستگاه شما: <b class="${cls(d)}">${d < 0 ? "پاسخ نداد" : fa(d) + "ms"}</b></span>`) +
         `</span>`;
       li.querySelector(".host").textContent = p.host + ":" + p.port;
-      li.querySelector(".go").href = p.tg;
+      const go = li.querySelector(".go");
+      go.href = p.tg;
+      go.onclick = () => tried(p, v);
+      li.querySelector(".pm").onclick = () => watch(p);
       li.querySelector(".cp").onclick = e => copy(p.tg, e.target);
       list.appendChild(li);
     });
-    const best = v.find(p => (dev[key(p)] ?? 0) >= 0);
+    const best = v.find(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
     $("#best").href = best ? best.tg : "#";
+    $("#best").onclick = () => best && tried(best, v);
   }
 
   function copy(text, el) {
@@ -131,42 +258,249 @@
     else prompt("لینک:", text);
   }
 
-  // Time until the browser's request to host:port settles (success or error).
-  // Includes TCP + TLS round trips from THIS device; failures/timeouts = -1.
-  async function probe(p, timeout = 4000) {
-    if (BAD.has(p.port)) return undefined;
-    let best = Infinity;
-    for (let i = 0; i < 2; i++) {
-      const ctl = new AbortController(), t0 = performance.now();
-      const timer = setTimeout(() => ctl.abort(), timeout);
-      try { await fetch(`https://${p.host}:${p.port}/?_=${Math.random()}`, { mode: "no-cors", cache: "no-store", signal: ctl.signal }); }
-      catch (e) { if (ctl.signal.aborted) { clearTimeout(timer); return -1; } }
-      clearTimeout(timer);
-      const ms = performance.now() - t0;
-      if (ms < 8) return -1;                 // instant error = blocked/refused locally
-      best = Math.min(best, ms);
-    }
-    return Math.round(best);
+  // ------------------------------------------------ "did it connect?" bar --
+  let pending = null, pendingList = [];
+  function tried(p, list) {
+    pending = p; pendingList = list;
+    log("info", `opened in Telegram: ${key(p)} [${p.type}] device=${dev[key(p)] ?? "untested"}`);
+    $("#fbQ").innerHTML = "";
+    $("#fbQ").append(`در تلگرام Connect را زدید و حدود ۱۰ ثانیه صبر کردید؟ `);
+    const b = document.createElement("b"); b.dir = "ltr"; b.textContent = key(p); $("#fbQ").append(b);
+    $("#fb").style.display = "block";
+    watch(p, true);
   }
+  $("#fbYes").onclick = () => {
+    if (!pending) return;
+    fb[pid(pending)] = "ok"; saveFb();
+    log("ok", `USER: connected in Telegram via ${key(pending)}`);
+    $("#fb").style.display = "none"; pending = null; render(); diagnose();
+  };
+  $("#fbNo").onclick = () => {
+    if (!pending) return;
+    fb[pid(pending)] = "fail"; saveFb();
+    const s = stats();
+    log("err", `USER: NOT connected via ${key(pending)} — browser ping meanwhile: ${s.n ? `${s.ok}/${s.n} ok, avg ${s.avg ?? "-"}ms` : "n/a"}`);
+    const i = pendingList.findIndex(p => pid(p) === pid(pending));
+    const next = pendingList.slice(i + 1).find(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
+    render(); diagnose();
+    if (next) { tried(next, pendingList); location.href = next.tg; }
+    else { $("#fb").style.display = "none"; pending = null; log("warn", "no more untried proxies in this view"); }
+  };
+  $("#fbX").onclick = () => { $("#fb").style.display = "none"; pending = null; };
 
+  // ------------------------------------------------------- live monitor --
+  let samples = [], monTimer = null, monGen = 0;
+  function stats() {
+    const s = samples.filter(x => x.ms !== null), okv = s.filter(x => x.ok).map(x => x.ms);
+    const avg = okv.length ? Math.round(okv.reduce((a, b) => a + b, 0) / okv.length) : null;
+    let jit = null;
+    if (okv.length > 1) { let d = 0; for (let i = 1; i < okv.length; i++) d += Math.abs(okv[i] - okv[i - 1]); jit = Math.round(d / (okv.length - 1)); }
+    return { n: s.length, ok: okv.length, avg, jit, min: okv.length ? Math.min(...okv) : null, max: okv.length ? Math.max(...okv) : null, last: s.length ? s[s.length - 1] : null };
+  }
+  function watch(p, quiet) {
+    if (BAD.has(p.port)) { log("warn", `${key(p)}: browsers can't probe port ${p.port}`); return; }
+    if (mon && pid(mon) === pid(p) && monTimer) return;
+    mon = p; samples = []; const gen = ++monGen;
+    clearTimeout(monTimer);
+    $("#monStop").disabled = false;
+    $("#liveDot").classList.add("live");
+    $("#tMon").textContent = key(p); $("#tMonS").textContent = p.type === "faketls" ? "FakeTLS" : p.type;
+    if (!quiet) log("info", `live watch started: ${key(p)}`);
+    render(); draw();
+    const tick = async () => {
+      if (gen !== monGen) return;
+      const r = await probeUrl(proxyUrl(p), 3000);
+      if (gen !== monGen) return;
+      const ok = r.state === "reply";
+      samples.push({ ok, ms: r.ms, t: Date.now() });
+      if (samples.length > 90) samples.shift();
+      const s = stats();
+      $("#tMon").innerHTML = ""; const b = document.createElement("span");
+      b.className = ok ? cls(r.ms) : "r"; b.textContent = ok ? `${r.ms} ms` : stateFa(r.state); $("#tMon").append(b);
+      $("#tMonS").textContent = `${key(p)} · min ${s.min ?? "-"} / max ${s.max ?? "-"}`;
+      const loss = Math.round(100 * (s.n - s.ok) / s.n);
+      $("#tLoss").innerHTML = `<span class="${loss === 0 ? "g" : loss < 20 ? "y" : "r"}">${fa(loss)}٪ قطعی</span>`;
+      $("#tLossS").textContent = `jitter ${s.jit ?? "-"}ms · ${fa(s.ok)}/${fa(s.n)} پاسخ`;
+      if (!ok) log("warn", `watch ${key(p)}: ${r.state} after ${r.ms}ms`);
+      else if (s.n % 15 === 0) log("info", `watch ${key(p)}: avg ${s.avg}ms jitter ${s.jit}ms loss ${loss}% (${s.n} samples)`);
+      draw();
+      monTimer = setTimeout(tick, 2000);
+    };
+    tick();
+  }
+  $("#monStop").onclick = () => {
+    monGen++; clearTimeout(monTimer); monTimer = null;
+    $("#monStop").disabled = true; $("#liveDot").classList.remove("live");
+    if (mon) log("info", `live watch stopped: ${key(mon)}`);
+  };
+
+  function draw() {
+    const c = $("#chart"), dpr = window.devicePixelRatio || 1;
+    const W = c.clientWidth, H = c.clientHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    const g = c.getContext("2d"); g.scale(dpr, dpr); g.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement);
+    const okv = samples.filter(s => s.ok).map(s => s.ms);
+    const top = Math.max(300, ...okv) * 1.15, pad = 16, L = 40, n = 90, dx = (W - L - pad) / (n - 1);
+    g.strokeStyle = css.getPropertyValue("--line"); g.fillStyle = css.getPropertyValue("--mute");
+    g.font = "10px ui-monospace,monospace"; g.lineWidth = 1; g.direction = "ltr"; g.textAlign = "left";
+    for (const v of [0, top / 2, top]) {
+      const y = H - pad - (v / top) * (H - 2 * pad);
+      g.beginPath(); g.moveTo(L, y); g.lineTo(W - pad, y); g.stroke();
+      g.fillText(Math.round(v) + "ms", 6, y + 3);
+    }
+    const x0 = W - pad - (samples.length - 1) * dx;
+    g.strokeStyle = css.getPropertyValue("--acc"); g.lineWidth = 2; g.beginPath();
+    let pen = false;
+    samples.forEach((s, i) => {
+      const x = x0 + i * dx;
+      if (!s.ok) { pen = false; return; }
+      const y = H - pad - (s.ms / top) * (H - 2 * pad);
+      pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true;
+    });
+    g.stroke();
+    g.fillStyle = css.getPropertyValue("--bad");
+    samples.forEach((s, i) => { if (!s.ok) { g.beginPath(); g.arc(x0 + i * dx, pad, 3, 0, 7); g.fill(); } });
+    $("#chartLbl").innerHTML = "پینگ زنده هر ۲ ثانیه · نقطهٔ قرمز = بی‌پاسخ" + (mon ? " · " : "");
+    if (mon) { const b = document.createElement("bdi"); b.textContent = key(mon); $("#chartLbl").append(b); }
+  }
+  window.addEventListener("resize", draw);
+
+  // ------------------------------------------------------- network info --
+  function netInfo() {
+    const c = navigator.connection;
+    $("#tNet").innerHTML = navigator.onLine ? `<span class="g">آنلاین</span>` : `<span class="r">قطع</span>`;
+    $("#tNetS").textContent = c ? `${c.type && c.type !== "unknown" ? c.type + " · " : ""}${c.effectiveType || ""} · rtt ${c.rtt ?? "-"}ms · ~${c.downlink ?? "-"}Mbps` : "";
+  }
+  window.addEventListener("online", () => { netInfo(); log("ok", "browser: back online"); checkTelegram(); });
+  window.addEventListener("offline", () => { netInfo(); log("err", "browser: OFFLINE"); diagnose(); });
+  if (navigator.connection) navigator.connection.addEventListener("change", () => {
+    const c = navigator.connection; netInfo();
+    log("info", `network changed: ${c.type || ""} ${c.effectiveType} rtt=${c.rtt}ms down~${c.downlink}Mbps`);
+  });
+
+  // -------------------------------------------- Telegram without proxy --
+  let tg = null;   // {open: bool, detail}
+  const TG = [["DC2 149.154.167.51", "https://149.154.167.51/"], ["DC4 149.154.167.91", "https://149.154.167.91/"],
+              ["DC1 149.154.175.53", "https://149.154.175.53/"], ["web.telegram.org", "https://web.telegram.org/favicon.ico"]];
+  async function checkTelegram() {
+    $("#tTg").textContent = "…"; $("#tTgS").textContent = "در حال بررسی";
+    const res = await Promise.all(TG.map(([n, u]) => probeUrl(u + "?_=" + Math.random(), 5000).then(r => [n, r])));
+    res.forEach(([n, r]) => log(r.state === "reply" ? "info" : "warn", `telegram direct ${n}: ${r.state} ${r.ms}ms`));
+    const open = res.filter(([, r]) => r.state === "reply").length;
+    tg = { open: open >= 2, n: open };
+    $("#tTg").innerHTML = tg.open ? `<span class="g">باز</span>` : `<span class="r">مسدود</span>`;
+    $("#tTgS").textContent = `${fa(open)} از ${fa(res.length)} مقصد پاسخ دادند`;
+    diagnose();
+  }
+  $("#tgRecheck").onclick = checkTelegram;
+
+  // ----------------------------------------------------- internet speed --
+  const CF = "https://speed.cloudflare.com";
+  const mbps = (bytes, ms) => (bytes * 8 / ms / 1000);
+  async function pingInternet() {
+    const v = [];
+    for (let i = 0; i < 6; i++) {
+      const t0 = performance.now();
+      try { await fetch(`${CF}/__down?bytes=0&_=${Math.random()}`, { cache: "no-store" }); v.push(performance.now() - t0); } catch (e) {}
+    }
+    if (v.length < 2) { $("#tPing").innerHTML = `<span class="r">خطا</span>`; log("err", "internet ping: speed.cloudflare.com unreachable"); return; }
+    v.shift(); v.sort((a, b) => a - b);
+    const med = Math.round(v[v.length >> 1]);
+    $("#tPing").innerHTML = `<span class="${cls(med)}">${med} ms</span>`;
+    $("#tPingS").textContent = `min ${Math.round(v[0])} / max ${Math.round(v[v.length - 1])} ms`;
+    log("info", `internet ping (cloudflare): median ${med}ms, min ${Math.round(v[0])}ms`);
+  }
+  async function download() {
+    const ctl = new AbortController(), t0 = performance.now(); let got = 0;
+    const stop = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(`${CF}/__down?bytes=12000000&_=${Math.random()}`, { cache: "no-store", signal: ctl.signal });
+      const rd = r.body.getReader(); let last = 0;
+      for (;;) {
+        const { done, value } = await rd.read(); if (done) break;
+        got += value.length; const ms = performance.now() - t0;
+        if (ms - last > 250) { last = ms; $("#tDown").textContent = mbps(got, ms).toFixed(1) + " Mbps"; $("#tDownS").textContent = `${(got / 1e6).toFixed(1)} MB …`; }
+      }
+    } catch (e) { if (!ctl.signal.aborted) log("err", `download test: ${e.message}`); }
+    clearTimeout(stop);
+    const ms = performance.now() - t0, v = mbps(got, ms);
+    $("#tDown").textContent = v.toFixed(1) + " Mbps"; $("#tDownS").textContent = `${(got / 1e6).toFixed(1)} MB در ${(ms / 1000).toFixed(1)} ثانیه`;
+    log(got ? "info" : "err", `download: ${v.toFixed(2)} Mbps (${(got / 1e6).toFixed(1)} MB in ${(ms / 1000).toFixed(1)}s)`);
+  }
+  async function upload() {
+    const chunk = new Uint8Array(1000000), t0 = performance.now(); let sent = 0;
+    while (performance.now() - t0 < 7000 && sent < 6e6) {
+      try { await fetch(`${CF}/__up?_=${Math.random()}`, { method: "POST", body: chunk, cache: "no-store" }); sent += chunk.length; }
+      catch (e) { log("err", `upload test: ${e.message}`); break; }
+      const ms = performance.now() - t0;
+      $("#tUp").textContent = mbps(sent, ms).toFixed(1) + " Mbps"; $("#tUpS").textContent = `${(sent / 1e6).toFixed(0)} MB …`;
+    }
+    const ms = performance.now() - t0, v = mbps(sent, ms);
+    $("#tUp").textContent = sent ? v.toFixed(1) + " Mbps" : "خطا"; $("#tUpS").textContent = `${(sent / 1e6).toFixed(0)} MB در ${(ms / 1000).toFixed(1)} ثانیه`;
+    log(sent ? "info" : "err", `upload: ${v.toFixed(2)} Mbps (${(sent / 1e6).toFixed(0)} MB in ${(ms / 1000).toFixed(1)}s)`);
+  }
+  $("#speed").onclick = async () => {
+    const b = $("#speed"); b.disabled = true;
+    log("info", "speed test started (speed.cloudflare.com)");
+    $("#tDown").textContent = "…"; $("#tUp").textContent = "…";
+    await pingInternet(); await download(); await upload();
+    b.disabled = false; diagnose();
+  };
+
+  // ----------------------------------------------------- device test --
+  let pxSummary = null;
   $("#test").onclick = async () => {
     const btn = $("#test"), uniq = [], seen = new Set();
     for (const p of view()) { if (!seen.has(key(p)) && !BAD.has(p.port)) { seen.add(key(p)); uniq.push(p); } if (uniq.length >= 60) break; }
     btn.disabled = true; dev = {};
+    log("info", `device test: probing ${uniq.length} proxies from this network…`);
+    const counts = { reply: 0, timeout: 0, reset: 0 };
     let done = 0, i = 0;
     const worker = async () => {
       while (i < uniq.length) {
-        const p = uniq[i++], r = await probe(p);
-        if (r !== undefined) dev[key(p)] = r;
+        const p = uniq[i++];
+        let best = null, st = null;
+        for (let k = 0; k < 2; k++) {
+          const r = await probeUrl(proxyUrl(p), 4000);
+          st = r.state; if (r.state !== "reply") break;
+          best = best === null ? r.ms : Math.min(best, r.ms);
+        }
+        dev[key(p)] = best ?? -1; counts[best !== null ? "reply" : st]++;
+        if (best === null) log("warn", `device ${key(p)}: ${st}`);
         $("#status").textContent = `تست از دستگاه شما: ${fa(++done)} از ${fa(uniq.length)}…`;
       }
     };
     await Promise.all(Array.from({ length: 6 }, worker));
-    const ok = Object.values(dev).filter(x => x >= 0).length;
-    $("#status").textContent = `تست تمام شد: ${fa(ok)} پروکسی از دستگاه شما پاسخ دادند و به ترتیب سرعت مرتب شدند.`;
-    btn.disabled = false; render();
+    pxSummary = { ...counts, n: uniq.length };
+    log(counts.reply ? "ok" : "err", `device test done: reply ${counts.reply}, timeout ${counts.timeout}, reset ${counts.reset} (of ${uniq.length})`);
+    $("#status").textContent = `تست تمام شد: ${fa(counts.reply)} پروکسی از دستگاه شما پاسخ دادند و به ترتیب سرعت مرتب شدند.`;
+    $("#tPx").innerHTML = `<span class="${counts.reply ? "g" : "r"}">${fa(counts.reply)} از ${fa(uniq.length)}</span>`;
+    $("#tPxS").textContent = `تایم‌اوت ${fa(counts.timeout)} · رد فوری ${fa(counts.reset)}`;
+    btn.disabled = false; render(); diagnose();
   };
 
+  // ----------------------------------------------------------- diagnosis --
+  function diagnose() {
+    const d = $("#diag"), fails = Object.values(fb).filter(x => x === "fail").length, oks = Object.values(fb).filter(x => x === "ok").length;
+    let cls = "", msg;
+    if (!navigator.onLine) { cls = "bad"; msg = "❌ اینترنت این دستگاه قطع است."; }
+    else if (tg && tg.open) { cls = "good"; msg = "✅ تلگرام از شبکهٔ شما بدون پروکسی هم باز است. اگر تلگرام وصل نمی‌شود، پروکسی را در تلگرام خاموش کنید (Settings ← Data and Storage ← Proxy ← Use Proxy خاموش)."; }
+    else if (oks) { cls = "good"; msg = `✅ ${fa(oks)} پروکسی در تلگرام شما کار کرده است. آن‌ها بالای لیست با برچسب سبز هستند.`; }
+    else if (pxSummary && pxSummary.reply === 0) { cls = "bad"; msg = "❌ هیچ پروکسی‌ای از شبکهٔ شما جواب نداد. یعنی شبکهٔ شما (یا VPN/فایروال روی دستگاه) اتصال به این سرورها را می‌بندد. اگر VPN روشن است خاموشش کنید و دوباره تست کنید؛ یا اینترنت دیگری (وای‌فای ↔ اینترنت گوشی) را امتحان کنید."; }
+    else if (fails >= 3 && pxSummary && pxSummary.reply > 0) {
+      cls = "warn";
+      msg = `⚠️ شبکهٔ شما به پروکسی‌ها <b>می‌رسد</b> (${fa(pxSummary.reply)} پاسخ دادند) ولی ${fa(fails)} پروکسی در تلگرام وصل نشد. یعنی مشکل از در دسترس بودن پروکسی نیست؛ به احتمال زیاد فیلترینگ (DPI) خودِ اتصال برنامهٔ تلگرام را تشخیص می‌دهد و می‌بندد. راه‌ها: ` +
+            `۱) در تلگرام همهٔ پروکسی‌های قدیمی را پاک کنید و «Use Proxy» روشن باشد؛ ` +
+            `۲) شبکهٔ دیگری امتحان کنید (وای‌فای ↔ اینترنت گوشی)؛ ` +
+            `۳) اپ AutoConnector را نصب کنید: ترفندهای ضد DPI دارد و دقیقاً برای همین حالت ساخته شده.`;
+    }
+    else if (tg && !tg.open) { cls = "warn"; msg = "🔒 تلگرام از شبکهٔ شما مستقیم مسدود است؛ پس پروکسی لازم دارید. «تست از دستگاه من» را بزنید و از بالای لیست «اتصال» را امتحان کنید."; }
+    else msg = "در حال بررسی شبکه…";
+    d.className = "diag " + cls; d.innerHTML = msg;
+  }
+
+  // -------------------------------------------------------------- boot --
   $("#chips").onclick = e => {
     const el = e.target.closest("[data-f]"); if (!el) return;
     filter = el.dataset.f;
@@ -174,14 +508,31 @@
     render();
   };
 
+  function ago(t) {
+    const m = Math.round((Date.now() / 1000 - t) / 60);
+    return m < 1 ? "همین الان" : m < 60 ? fa(m) + " دقیقه پیش" : fa(Math.round(m / 60)) + " ساعت پیش";
+  }
+
+  const ua = navigator.userAgent;
+  const plat = /Android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : /Windows/i.test(ua) ? "Windows" : /Mac/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "?";
+  const brw = /Edg\//.test(ua) ? "Edge" : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "?";
+  log("info", `page opened · ${plat} · ${brw} · online=${navigator.onLine}` + (navigator.connection ? ` · ${navigator.connection.effectiveType} rtt=${navigator.connection.rtt}ms` : ""));
+  const prev = Object.values(fb);
+  if (prev.length) log("info", `earlier reports on this device: ${prev.filter(x => x === "ok").length} connected, ${prev.filter(x => x === "fail").length} failed`);
+  netInfo(); draw(); diagnose();
+
   fetch("proxies.json?_=" + Date.now(), { cache: "no-store" })
     .then(r => r.json())
     .then(d => {
       all = d.proxies || [];
-      $("#sub").textContent = `به‌روزرسانی: ${ago(d.updated)} · ${fa(d.live)} پروکسی زنده از ${fa(d.collected)} · نمایش ${fa(all.length)} تای برتر`;
+      $("#sub").textContent = `به‌روزرسانی: ${ago(d.updated)} · ${fa(d.live)} پروکسی تأییدشده از ${fa(d.collected)} · نمایش ${fa(all.length)} تای برتر`;
+      log("info", `list loaded: ${all.length} proxies, built ${new Date(d.updated * 1000).toISOString().slice(0, 16)}Z`);
       render();
     })
-    .catch(() => { $("#sub").textContent = "لیست بارگذاری نشد؛ چند دقیقهٔ دیگر دوباره امتحان کنید."; });
+    .catch(e => { $("#sub").textContent = "لیست بارگذاری نشد؛ چند دقیقهٔ دیگر دوباره امتحان کنید."; log("err", `list load failed: ${e.message}`); });
+
+  checkTelegram();
+  pingInternet();
 })();
 </script>
 </body>
