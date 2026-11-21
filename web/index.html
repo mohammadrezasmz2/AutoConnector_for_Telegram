@@ -166,7 +166,7 @@
   <header>
     <div class="t">
       <div class="kicker">AUTOCONNECTOR // MTPROTO // LIVE</div>
-      <h1 data-i="title"></h1>
+      <h1 data-i="title">پروکسی‌های MTProto تلگرام</h1>
       <div class="sub" id="sub">…</div>
     </div>
     <div class="head-actions">
@@ -177,32 +177,35 @@
         <button type="button" data-theme-option="matrix" data-i="themeMatrix"></button>
         <button type="button" data-theme-option="light" data-i="themeLight"></button>
       </div>
-      <button id="lang" title="Language / زبان"></button>
+      <button id="lang" title="Language / زبان">EN</button>
     </div>
   </header>
-
-  <div class="hero">
-    <a class="btn primary" id="best" href="#" data-i="best"></a>
-    <button id="test" data-i="test"></button>
+  <div id="startupWarning" class="diag warn" role="status" style="margin-top:10px">
+    در حال راه‌اندازی سایت… اگر این پیام باقی ماند، صفحه را تازه‌سازی کنید یا از لینک بررسی انتشار استفاده کنید.
   </div>
 
-  <p class="micro-hint" data-i="reconnectHint"></p>
+  <div class="hero">
+    <a class="btn primary" id="best" href="#" data-i="best">⚡ اتصال به بهترین پروکسی</a>
+    <button id="test" data-i="test">📶 تست از دستگاه من</button>
+  </div>
+
+  <p class="micro-hint" data-i="reconnectHint">💡 با زدن اتصال، بهترین پروکسی به تلگرام پیشنهاد می‌شود.</p>
   <div class="upgrade" id="upgrade" role="status" aria-live="polite">
     <span id="upgradeText"></span><a id="upgradeGo" class="btn" href="#"></a>
   </div>
 
   <!-- ===================== live status ===================== -->
   <section class="panel">
-    <h2><span class="dot" id="liveDot"></span> <span data-i="live"></span></h2>
+    <h2><span class="dot" id="liveDot"></span> <span data-i="live">وضعیت زنده</span></h2>
     <div class="tiles">
-      <div class="tile"><div class="k" data-i="kNet"></div><div class="v" id="tNet">…</div><div class="s" id="tNetS"></div></div>
-      <div class="tile"><div class="k" data-i="kTg"></div><div class="v" id="tTg">…</div><div class="s" id="tTgS"></div></div>
-      <div class="tile"><div class="k" data-i="kPx"></div><div class="v" id="tPx">—</div><div class="s" id="tPxS"></div></div>
-      <div class="tile"><div class="k" data-i="kPing"></div><div class="v" id="tPing">—</div><div class="s" id="tPingS"></div></div>
-      <div class="tile"><div class="k" data-i="kDown"></div><div class="v" id="tDown">—</div><div class="s" id="tDownS"></div></div>
-      <div class="tile"><div class="k" data-i="kUp"></div><div class="v" id="tUp">—</div><div class="s" id="tUpS"></div></div>
-      <div class="tile"><div class="k" data-i="kMon"></div><div class="v" id="tMon">—</div><div class="s" id="tMonS"></div></div>
-      <div class="tile"><div class="k" data-i="kLoss"></div><div class="v" id="tLoss">—</div><div class="s" id="tLossS"></div></div>
+      <div class="tile"><div class="k" data-i="kNet">اینترنت شما</div><div class="v" id="tNet">…</div><div class="s" id="tNetS"></div></div>
+      <div class="tile"><div class="k" data-i="kTg">تلگرام بدون پروکسی</div><div class="v" id="tTg">…</div><div class="s" id="tTgS"></div></div>
+      <div class="tile"><div class="k" data-i="kPx">پروکسی‌ها از شبکهٔ شما</div><div class="v" id="tPx">—</div><div class="s" id="tPxS"></div></div>
+      <div class="tile"><div class="k" data-i="kPing">پینگ اینترنت</div><div class="v" id="tPing">—</div><div class="s" id="tPingS"></div></div>
+      <div class="tile"><div class="k" data-i="kDown">دانلود</div><div class="v" id="tDown">—</div><div class="s" id="tDownS"></div></div>
+      <div class="tile"><div class="k" data-i="kUp">آپلود</div><div class="v" id="tUp">—</div><div class="s" id="tUpS"></div></div>
+      <div class="tile"><div class="k" data-i="kMon">پروکسی زیر نظر</div><div class="v" id="tMon">—</div><div class="s" id="tMonS"></div></div>
+      <div class="tile"><div class="k" data-i="kLoss">پایداری پروکسی</div><div class="v" id="tLoss">—</div><div class="s" id="tLossS"></div></div>
     </div>
     <div class="diag" id="diag"></div>
     <div class="chartbox">
@@ -210,30 +213,30 @@
       <canvas id="chart"></canvas>
     </div>
     <div class="row">
-      <button id="speed" data-i="speed"></button>
-      <button id="tgRecheck" data-i="tgRecheck"></button>
-      <button id="monStop" disabled data-i="monStop"></button>
+      <button id="speed" data-i="speed">⏱ تست سرعت</button>
+      <button id="tgRecheck" data-i="tgRecheck">🔄 بررسی تلگرام</button>
+      <button id="monStop" disabled data-i="monStop">🌐 پایش اینترنت</button>
     </div>
     <p class="note" style="margin:10px 0 0" data-i="liveNote"></p>
   </section>
 
   <details class="connection-log" id="connectionLogBox" open>
-    <summary><span data-i="connectionLogT"></span> <span class="note" id="connectionLogCount"></span></summary>
+    <summary><span data-i="connectionLogT">📡 لاگ اتصال پروکسی‌ها</span> <span class="note" id="connectionLogCount"></span></summary>
     <div class="connection-log-inner"><ol id="connectionLog" aria-live="polite"></ol></div>
-    <div class="row"><button id="connectionLogCopy" data-i="connectionLogCopy"></button><button id="connectionLogClear" data-i="connectionLogClear"></button></div>
+    <div class="row"><button id="connectionLogCopy" data-i="connectionLogCopy">📋 کپی لاگ اتصال</button><button id="connectionLogClear" data-i="connectionLogClear">🗑 پاک‌کردن لاگ اتصال</button></div>
   </details>
   <div class="chips" id="chips">
     <button class="chip on" data-f="all" data-i="fAll"></button>
     <button class="chip" data-f="faketls" data-i="fTls"></button>
     <button class="chip" data-f="other" data-i="fOther"></button>
   </div>
-  <p class="micro-hint" data-i="rankHint"></p>
+  <p class="micro-hint" data-i="rankHint">↕ رتبه‌بندی بر اساس تست واقعی MTProto، سرعت و پایداری</p>
   <div id="status"></div>
   <ol id="list"></ol>
 
   <!-- ===================== log ===================== -->
   <details id="logBox" open>
-    <summary><span data-i="logT"></span> <span class="note" id="logCount"></span></summary>
+    <summary><span data-i="logT">لاگ فنی</span> <span class="note" id="logCount"></span></summary>
     <div class="row" style="margin:8px 0">
       <button id="logCopy" data-i="logCopy"></button>
       <button id="logClear" data-i="logClear"></button>
@@ -242,7 +245,7 @@
   </details>
 
   <details>
-    <summary data-i="helpT"></summary>
+    <summary data-i="helpT">راهنما</summary>
     <ol id="help"></ol>
   </details>
 
@@ -270,6 +273,11 @@
 <script>
 (() => {
   const $ = s => document.querySelector(s);
+  // Leave a readable server-rendered fallback if the browser cannot start JS.
+  window.addEventListener("error", () => {
+    const el=$("#startupWarning");
+    if(el)el.textContent="نمایش اطلاعات سایت با خطا مواجه شد. لطفاً صفحه را با Ctrl+F5 تازه‌سازی کنید.";
+  });
 
   // ============================================================== i18n ==
   const T = {
@@ -1027,6 +1035,8 @@
   bind("sub", () => "…");
   applyLang();
   applyTheme();
+  // Only hide the fallback after the complete UI has initialized.
+  $("#startupWarning").style.display="none";
 
   const ua = navigator.userAgent;
   const plat = /Android/i.test(ua) ? "Android" : /iPhone|iPad/i.test(ua) ? "iOS" : /Windows/i.test(ua) ? "Windows" : /Mac/i.test(ua) ? "macOS" : /Linux/i.test(ua) ? "Linux" : "?";
