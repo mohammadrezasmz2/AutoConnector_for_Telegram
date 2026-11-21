@@ -548,15 +548,24 @@
 
   // ======================================================= user feedback ==
   let fb = {};                                   // pid -> "ok" | "fail"
+  let fbAt = {};                                 // pid -> report timestamp
   try { fb = JSON.parse(localStorage.getItem("ac_fb") || "{}"); } catch (e) {}
-  const saveFb = () => { try { localStorage.setItem("ac_fb", JSON.stringify(fb)); } catch (e) {} };
+  try { fbAt = JSON.parse(localStorage.getItem("ac_fb_at") || "{}"); } catch (e) {}
+  const FEEDBACK_TTL = 12 * 3600 * 1000;
+  const freshFeedback = p => Number.isFinite(fbAt[pid(p)]) &&
+    Date.now() - fbAt[pid(p)] >= 0 && Date.now() - fbAt[pid(p)] < FEEDBACK_TTL;
+  const activeFail = p => fb[pid(p)] === "fail" && freshFeedback(p);
+  const saveFb = () => { try {
+    localStorage.setItem("ac_fb", JSON.stringify(fb));
+    localStorage.setItem("ac_fb_at", JSON.stringify(fbAt));
+  } catch (e) {} };
   function groupFails() {
     const g = {};
-    for (const p of all) if (fb[pid(p)] === "fail") g[grp(p)] = (g[grp(p)] || 0) + 1;
+    for (const p of all) if (activeFail(p)) g[grp(p)] = (g[grp(p)] || 0) + 1;
     return g;
   }
   function markFail(p, why) {
-    fb[pid(p)] = "fail"; saveFb();
+    fb[pid(p)] = "fail"; fbAt[pid(p)] = Date.now(); saveFb();
     connectionLog("fail","failed",key(p));
     const s = stats(), g = grp(p);
     const peers = all.filter(q => grp(q) === g && pid(q) !== pid(p) && !fb[pid(q)]).length;
@@ -586,17 +595,21 @@
 
   // The server's genuine MTProto handshake is the baseline; an HTTPS probe
   // in a web browser is only an approximate additional hint.
+  // Rank ONLY from the build runner's real MTProto resPQ checks.
+  // Browser HTTPS/CORS hints cannot prove Telegram reachability or speed.
   function rankScore(p, gf) {
-    const feedback = fb[pid(p)];
-    if(feedback === "fail") return 9e6;
-    const stability = p.ok / Math.max(1,p.tries);
-    const d=dev[key(p)];
-    // Device HTTPS timing is only an approximation, unlike server resPQ tests.
-    const latency=Number.isFinite(d) && d>=0 ? .75*p.ms+.25*d : p.ms;
-    const typeCost=p.type==="faketls" ? 0 : p.type==="secure" ? 120 : 240;
-    return latency+(1-stability)*1400+typeCost
-      +Math.min(3,gf[grp(p)]||0)*1500-(feedback==="ok"?120:0);
+    if (activeFail(p)) return 9e6;
+    const stability = p.ok / Math.max(1, p.tries);
+    const typeCost = p.type === "faketls" ? 0 : p.type === "secure" ? 90 : 160;
+    const base = Number.isFinite(p.score) ? p.score
+      : p.ms + (1 - stability) * 1400 + typeCost;
+    // A recent user-confirmed Telegram connection matters more than HTTPS.
+    // It expires automatically to avoid old network feedback dominating.
+    const bonus = fb[pid(p)] === "ok" && freshFeedback(p)
+      ? Math.min(380, base * .48) : 0;
+    return base + Math.min(2, gf[grp(p)] || 0) * 260 - bonus;
   }
+
   function view() {
     const v=all.filter(p=>filter==="all"||(filter==="faketls"?p.type==="faketls":p.type!=="faketls"));
     const gf=groupFails();
@@ -625,7 +638,7 @@
       const go = li.querySelector(".go");
       go.href = p.tg; go.onclick = () => tried(p, v);
       li.querySelector(".x").onclick = () => {
-        if (fb[pid(p)] === "fail") { delete fb[pid(p)]; saveFb(); log("info", `USER undo ✗: ${key(p)}`); }
+        if (fb[pid(p)] === "fail") { delete fb[pid(p)]; delete fbAt[pid(p)]; saveFb(); log("info", `USER undo ✗: ${key(p)}`); }
         else { markFail(p, "✗ button"); if (pending && pid(pending) === pid(p)) closeBar(); }
         render(); diagnose();
       };
@@ -633,7 +646,7 @@
       li.querySelector(".cp").onclick = e => {copy(p.tg,e.target);connectionLog("info","copied",key(p));};
       list.appendChild(li);
     });
-    const best = v.find(p => fb[pid(p)] !== "fail");
+    const best = v.find(p => !activeFail(p));
     $("#best").href = best ? best.tg : "#";
     $("#best").onclick = e => { if (!best) { e.preventDefault(); return; } tried(best, v); };
     updateUpgrade();
@@ -665,7 +678,7 @@
   function closeBar() { $("#fb").style.display = "none"; pending = null; }
   $("#fbYes").onclick = () => {
     if (!pending) return;
-    fb[pid(pending)] = "ok"; selectedProxy = pending; saveFb();
+    fb[pid(pending)] = "ok"; fbAt[pid(pending)] = Date.now(); selectedProxy = pending; saveFb();
     log("ok", `USER ✓: connected in Telegram via ${key(pending)}`);
     connectionLog("info","connected",key(pending));
     closeBar(); render(); diagnose();
@@ -675,7 +688,7 @@
     markFail(pending, "bottom bar");
     const i = pendingList.findIndex(p => pid(p) === pid(pending));
     const gf = groupFails();
-    const rest = pendingList.slice(i + 1).filter(p => fb[pid(p)] !== "fail");
+    const rest = pendingList.slice(i + 1).filter(p => !activeFail(p));
     const next = rest.find(p => !gf[grp(p)]) || rest[0];
     render(); diagnose();
     if (next) { tried(next, pendingList); location.href = next.tg; }
@@ -909,7 +922,7 @@
     if (!navigator.onLine) { c = "bad"; m = D.offline; }
     else if (tg && tg.open) { c = "good"; m = D.tgOpen; }
     else if (oks) { c = "good"; m = D.oks(nf(oks)); }
-    else if (pxSummary && pxSummary.reply === 0) { c = "bad"; m = D.noReach; }
+    else if (pxSummary && pxSummary.reply === 0) { c = "warn"; m = D.noReach; }
     else if (fails >= 3 && pxSummary && pxSummary.reply > 0) { c = "warn"; m = D.dpi(nf(pxSummary.reply), nf(fails)); }
     else if (tg && !tg.open) { c = "warn"; m = D.tgBlocked; }
     else m = D.wait;
@@ -923,7 +936,7 @@
     const box=$("#upgrade");
     if(!selectedProxy || pending || !all.length){box.classList.remove("show");return;}
     const gf=groupFails();
-    const candidates=all.filter(p=>fb[pid(p)]!=="fail")
+    const candidates=all.filter(p=>!activeFail(p))
       .sort((a,b)=>rankScore(a,gf)-rankScore(b,gf));
     const best=candidates[0];
     if(!best || pid(best)===pid(selectedProxy) ||
@@ -964,8 +977,8 @@
   async function minuteMonitor(){
     if(scanBusy || document.hidden || !navigator.onLine || !all.length || $("#test").disabled)return;
     scanBusy=true;
-    const eligible=all.filter(p=>!BAD.has(p.port)&&fb[pid(p)]!=="fail");
-    const front=view().filter(p=>!BAD.has(p.port)&&fb[pid(p)]!=="fail").slice(0,12);
+    const eligible=all.filter(p=>!BAD.has(p.port)&&!activeFail(p));
+    const front=view().filter(p=>!BAD.has(p.port)&&!activeFail(p)).slice(0,12);
     const pick=new Map(front.map(p=>[key(p),p]));
     const rotating=eligible.slice(scanPosition).concat(eligible.slice(0,scanPosition));
     for(const p of rotating){
