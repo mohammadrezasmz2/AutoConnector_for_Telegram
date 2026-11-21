@@ -227,6 +227,7 @@
     <button class="chip" data-f="faketls" data-i="fTls"></button>
     <button class="chip" data-f="other" data-i="fOther"></button>
   </div>
+  <p class="micro-hint" data-i="rankHint"></p>
   <div id="status"></div>
   <ol id="list"></ol>
 
@@ -286,6 +287,7 @@
       connectionLogT: "📡 لاگ اتصال پروکسی‌ها", connectionLogCopy:"📋 کپی لاگ اتصال", connectionLogClear:"🗑 پاک کردن لاگ اتصال",
       connectionEvents:{ready:"پایش اتصال آماده است؛ تأیید نهایی اتصال در تلگرام انجام می‌شود.",catalog:(n,live)=>`فهرست تازه: ${n} پروکسی برتر از ${live} پروکسی با پاسخ واقعی MTProto`,scan:(ok,n)=>`آزمون تقریبی مرورگر: ${ok} پاسخ HTTPS از ${n} پروکسی؛ نتیجهٔ قطعی MTProto نیست.`,opened:h=>`لینک پروکسی ${h} برای تلگرام باز شد؛ تأیید اتصال هنوز انجام نشده`,connected:h=>`✓ کاربر اتصال پروکسی ${h} را در تلگرام تأیید کرد`,failed:h=>`✗ کاربر اعلام کرد پروکسی ${h} به تلگرام وصل نشده`,tested:(ok,n)=>`تست دستگاه: ${ok} پاسخ تقریبی از ${n} پروکسی`,copied:h=>`لینک پروکسی ${h} کپی شد`,network:"وضعیت شبکه تغییر کرد"},
       reconnectHint: "💡 هر بار روی «اتصال» بزنید، بهترین گزینهٔ به‌روز شده به تلگرام پیشنهاد می‌شود؛ تغییر پروکسی در خود تلگرام با تأیید شماست.",
+      rankHint:"↕ رتبه‌بندی خودکار بر اساس تست واقعی MTProto در سرور، پایداری و پینگ؛ پایش تقریبی دستگاه هر دقیقه کمک می‌کند. تازه‌سازی سرور هر ۱۰ دقیقه.",
       improved: "✨ پروکسی سریع‌تری در فهرست پیدا شد. برای امتحان و جایگزینی در تلگرام روی دکمه بزنید.",
       improvedGo: "⚡ امتحان پروکسی بهتر",
       internetWatch: "اینترنت · Cloudflare", monitorInternet: "🌐 پایش پینگ اینترنت",
@@ -339,6 +341,7 @@
       connectionLogT: "📡 Proxy connection log",connectionLogCopy:"📋 Copy connection log",connectionLogClear:"🗑 Clear connection log",
       connectionEvents:{ready:"Monitoring is ready; Telegram connection still requires user confirmation.",catalog:(n,live)=>`New catalog: top ${n} proxies from ${live} real MTProto handshake responders`,scan:(ok,n)=>`Browser HTTPS hints: ${ok} responses out of ${n}; this is not a verified MTProto result.`,opened:h=>`Opened proxy ${h} in Telegram; awaiting connection confirmation`,connected:h=>`✓ User confirmed Telegram connected using proxy ${h}`,failed:h=>`✗ User reported Telegram failed to connect using proxy ${h}`,tested:(ok,n)=>`Device hints: ${ok} responses out of ${n} proxies`,copied:h=>`Copied proxy link for ${h}`,network:"Network connectivity changed"},
       reconnectHint: "💡 Every Connect uses the latest best-ranked proxy. Telegram still needs your confirmation to switch.",
+      rankHint:"↕ Auto-ranked using real server MTProto checks, reliability and latency; approximate device checks each minute. Server refresh every ~10 min.",
       improved: "✨ A faster candidate is available. Tap to try replacing the proxy in Telegram.",
       improvedGo: "⚡ Try faster proxy",
       internetWatch: "Internet · Cloudflare", monitorInternet: "🌐 Watch internet ping",
@@ -580,9 +583,10 @@
     if(feedback === "fail") return 9e6;
     const stability = p.ok / Math.max(1,p.tries);
     const d=dev[key(p)];
-    const latency=Number.isFinite(d) && d>=0 ? .65*d+.35*p.ms : p.ms;
-    const typeCost=p.type==="faketls" ? 0 : p.type==="secure" ? 150 : 350;
-    return latency+(1-stability)*1200+typeCost
+    // Device HTTPS timing is only an approximation, unlike server resPQ tests.
+    const latency=Number.isFinite(d) && d>=0 ? .75*p.ms+.25*d : p.ms;
+    const typeCost=p.type==="faketls" ? 0 : p.type==="secure" ? 120 : 240;
+    return latency+(1-stability)*1400+typeCost
       +Math.min(3,gf[grp(p)]||0)*1500-(feedback==="ok"?120:0);
   }
   function view() {
@@ -591,7 +595,7 @@
     return v.map((p,i)=>[p,i]).sort((a,b)=>rankScore(a[0],gf)-rankScore(b[0],gf)||a[1]-b[1]).map(x=>x[0]);
   }
 
-    function render() {
+  function render() {
     const v = view(), list = $("#list"), gf = groupFails();
     list.innerHTML = "";
     v.forEach((p, i) => {
@@ -621,7 +625,7 @@
       li.querySelector(".cp").onclick = e => {copy(p.tg,e.target);connectionLog("info","copied",key(p));};
       list.appendChild(li);
     });
-    const best = v.find(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
+    const best = v.find(p => fb[pid(p)] !== "fail");
     $("#best").href = best ? best.tg : "#";
     $("#best").onclick = e => { if (!best) { e.preventDefault(); return; } tried(best, v); };
     updateUpgrade();
@@ -663,7 +667,7 @@
     markFail(pending, "bottom bar");
     const i = pendingList.findIndex(p => pid(p) === pid(pending));
     const gf = groupFails();
-    const rest = pendingList.slice(i + 1).filter(p => fb[pid(p)] !== "fail" && (dev[key(p)] ?? 0) >= 0);
+    const rest = pendingList.slice(i + 1).filter(p => fb[pid(p)] !== "fail");
     const next = rest.find(p => !gf[grp(p)]) || rest[0];
     render(); diagnose();
     if (next) { tried(next, pendingList); location.href = next.tg; }
@@ -995,11 +999,11 @@
     size(); addEventListener("resize", size);
     setInterval(() => {
       if (document.hidden) return;
-      g.fillStyle = "rgba(0,0,0,.09)"; g.fillRect(0, 0, W, H);
+      g.fillStyle = theme === "matrix" ? "rgba(0,9,2,.10)" : "rgba(0,0,0,.09)"; g.fillRect(0, 0, W, H);
       g.font = fs + "px monospace";
       for (let i = 0; i < cols; i++) {
         const y = drops[i] * fs;
-        g.fillStyle = Math.random() < .08 ? "#fff" : "rgba(220,220,220,.55)";
+        g.fillStyle = theme === "matrix" ? (Math.random() < .08 ? "#bcffd0" : "rgba(57,255,136,.69)") : (Math.random() < .08 ? "#fff" : "rgba(220,220,220,.55)");
         g.fillText(glyphs[(Math.random() * glyphs.length) | 0], i * fs, y);
         if (y > H && Math.random() > .975) drops[i] = 0;
         drops[i] += 1;
